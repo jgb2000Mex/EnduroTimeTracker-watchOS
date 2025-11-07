@@ -24,7 +24,7 @@ struct WelcomeView: View {
             // Texto de bienvenida con tamaños reducidos
             VStack(spacing: 2) {
                 Text("Welcome to")
-                    .font(.caption)
+                    .font(.headline)
                     .foregroundColor(.white)
                 
                 HStack(spacing: 0) {
@@ -32,14 +32,14 @@ struct WelcomeView: View {
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.yellow)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.9)
                         .lineLimit(1)
                     
                     Text(" Tracker")
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.9)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 4)
@@ -48,21 +48,21 @@ struct WelcomeView: View {
             Spacer()
                 .frame(maxHeight: .infinity)
             
-            // Botón Start con estilo Liquid Glass
+            // Botón Start con estilo Glass
             Button(action: onStart) {
                 Text("Start")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .foregroundColor(.white)
+                    .padding(.vertical, 15)
+                    .padding(.horizontal, 60)
             }
-            .buttonStyle(.glassProminent)
-            .tint(.yellow)
+            .buttonStyle(GlassButtonStyle())
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .appBackground()
     }
 }
 

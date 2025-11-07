@@ -19,7 +19,17 @@ struct RaceView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // Background gradient
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.09, green: 0.145, blue: 0.229),
+                    Color(red: 0.118, green: 0.227, blue: 0.441),
+                    Color(red: 0.09, green: 0.145, blue: 0.229)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
             
             if showGoScreen {
                 GoView(
@@ -36,7 +46,7 @@ struct RaceView: View {
                     dismiss()
                 })
             } else {
-                VStack(spacing: 4) {
+                VStack(spacing: 1) {
                     // Spacer para dejar espacio para el header del sistema
                     Spacer()
                         .frame(height: 2)
@@ -53,20 +63,20 @@ struct RaceView: View {
                     
                     // Countdown grande
                     Text(formatCountdown(timeRemaining))
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .font(.system(size: 55, weight: .bold, design: .rounded))
                         .foregroundColor(.orange)
                         .monospacedDigit()
                     
                     Spacer()
-                        .frame(height: 2)
+                        .frame(height: 15)
                     
                     // Información del siguiente TC
                     VStack(spacing: 2) {
                         Text("Time of Next TC")
-                            .font(.system(size: 9))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundColor(.gray)
                         Text(formatTime(getCurrentTimeControlTime()))
-                            .font(.subheadline)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
                     }

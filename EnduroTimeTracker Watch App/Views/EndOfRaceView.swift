@@ -21,29 +21,28 @@ struct EndOfRaceView: View {
             
             // Mensaje End of Race
             Text("End of Race")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .font(.system(size: 25, weight: .bold, design: .rounded))
+                .foregroundColor(.green)
                 .multilineTextAlignment(.center)
             
             Spacer()
                 .frame(maxHeight: .infinity)
             
-            // Botón Dismiss con estilo Liquid Glass
+            // Botón Dismiss con estilo Glass
             Button(action: onDismiss) {
                 Text("Dismiss")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 15)
             }
-            .buttonStyle(.glassProminent)
-            .tint(.yellow)
-            .padding(.horizontal, 8)
+            .buttonStyle(GlassButtonStyle())
+            .padding(.horizontal, 30)
             .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .appBackground()
     }
 }
 

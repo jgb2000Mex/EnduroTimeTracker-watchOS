@@ -17,12 +17,12 @@ struct TimeTableView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 6) {
+            VStack(spacing: 12) {
                 // Parc Fermé Toggle
                 HStack {
                     Text("Parc Ferme")
-                        .font(.caption)
-                        .foregroundColor(.white)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.yellow)
                     
                     Spacer()
                     
@@ -37,131 +37,73 @@ struct TimeTableView: View {
                 
                 // Parc Fermé Time Picker (si está activo)
                 if raceConfig.hasParcFerme {
-                    Button(action: {
-                        selectedTimeControl = nil
-                        showingTimePicker = true
-                    }) {
-                        HStack {
-                            Text("Parc Ferme:")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                            Spacer()
-                            if let pfTime = raceConfig.parcFermeTime {
-                                Text(formatTime(pfTime))
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                            } else {
-                                Text("Select time")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.glass)
-                    .tint(raceConfig.parcFermeTime != nil ? .green : .gray)
+                    parcFermeButton
                 }
                 
-                // Lista de Time Controls con estilo Liquid Glass
-                ForEach(raceConfig.timeControls) { tc in
-                    Button(action: {
-                        selectedTimeControl = tc
-                        showingTimePicker = true
-                    }) {
-                        HStack {
-                            Text(tc.name)
-                                .font(.caption)
-                                .foregroundColor(.white)
-                            Spacer()
-                            if let time = tc.scheduledTime {
-                                Text(formatTime(time))
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                            } else {
-                                Text("Select time")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.glass)
-                    .tint(tc.scheduledTime != nil ? .green : .gray)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            deleteTimeControl(tc)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
+                // Lista de Time Controls usando List para que swipeActions funcione
+                timeControlsList
                 
-                // Botón Add Time Control con estilo Liquid Glass
-                Button(action: addTimeControl) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.yellow)
-                        Text("Add Time Control")
-                            .font(.caption)
-                            .foregroundColor(.yellow)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.glass)
-                .tint(.yellow)
-                .padding(.top, 4)
+                // Botón Add Time Control con estilo Glass
+                addTimeControlButton
                 
                 Spacer()
                     .frame(height: 4)
                 
-                // Botón Done con estilo Liquid Glass
-                Button(action: onDone) {
-                    Text("Done")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(.yellow)
-                .padding(.top, 8)
+                // Botón Done con estilo Glass
+                doneButton
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: {
-                    onDone()
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
-                        .font(.system(size: 12))
-                }
+        .background(backgroundGradient)
+        .toolbar(content: toolbarContent)
+        .sheet(isPresented: $showingTimePicker, content: timePickerSheet)
+        .onAppear(perform: initializeTimeControls)
+    }
+    
+    private var backgroundGradient: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color(red: 0.09, green: 0.145, blue: 0.229),
+                Color(red: 0.118, green: 0.227, blue: 0.441),
+                Color(red: 0.09, green: 0.145, blue: 0.229)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+    
+    @ToolbarContentBuilder
+    private func toolbarContent() -> some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(action: {
+                onDone()
+                dismiss()
+            }) {
+                Image(systemName: "chevron.left")
+                    .foregroundColor(.white)
+                    .font(.system(size: 12))
             }
         }
-        .sheet(isPresented: $showingTimePicker) {
-            TimePickerView(
-                initialTime: getInitialTime(),
-                minimumTime: getMinimumTime(),
-                onTimeSelected: { time in
-                    saveTime(time)
-                }
-            )
-        }
-        .onAppear {
-            // Inicializar con 2 Time Controls por defecto (sin horarios)
-            if raceConfig.timeControls.isEmpty {
-                let defaultTC1 = TimeControl(name: "Time Control 1")
-                let defaultTC2 = TimeControl(name: "Time Control 2")
-                raceConfig.timeControls = [defaultTC1, defaultTC2]
+    }
+    
+    @ViewBuilder
+    private func timePickerSheet() -> some View {
+        TimePickerView(
+            initialTime: getInitialTime(),
+            minimumTime: getMinimumTime(),
+            onTimeSelected: { time in
+                saveTime(time)
             }
+        )
+    }
+    
+    private func initializeTimeControls() {
+        if raceConfig.timeControls.isEmpty {
+            let defaultTC1 = TimeControl(name: "Time Control 1")
+            let defaultTC2 = TimeControl(name: "Time Control 2")
+            raceConfig.timeControls = [defaultTC1, defaultTC2]
         }
     }
     
@@ -260,13 +202,215 @@ struct TimeTableView: View {
         raceConfig.timeControls.append(newTC)
     }
     
+    private func canDeleteTimeControl(at index: Int) -> Bool {
+        // Solo se pueden borrar Time Controls a partir del 3 (índice 2)
+        // Time Control 1 (índice 0) y Time Control 2 (índice 1) no se pueden borrar
+        return index >= 2
+    }
+    
     private func deleteTimeControl(_ tc: TimeControl) {
-        raceConfig.timeControls.removeAll { $0.id == tc.id }
+        // Validar que se puede borrar antes de hacerlo
+        if let index = raceConfig.timeControls.firstIndex(where: { $0.id == tc.id }) {
+            guard canDeleteTimeControl(at: index) else {
+                return // No se puede borrar, salir sin hacer nada
+            }
+            raceConfig.timeControls.removeAll { $0.id == tc.id }
+        }
     }
     
     private func validateAndCleanTimeControls() {
         // Validación se implementará después con la lógica completa
         // Por ahora solo estructura visual
+    }
+    
+    private var mainContent: some View {
+        ScrollView {
+            scrollContent
+        }
+    }
+    
+    private var scrollContent: some View {
+        VStack(spacing: 12) {
+            // Parc Fermé Toggle
+            HStack {
+                Text("Parc Ferme")
+                    .font(.caption)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { raceConfig.hasParcFerme },
+                    set: { raceConfig.hasParcFerme = $0 }
+                ))
+                    .labelsHidden()
+                    .tint(.green)
+            }
+            .padding(.horizontal, 8)
+            
+            // Parc Fermé Time Picker (si está activo)
+            if raceConfig.hasParcFerme {
+                parcFermeButton
+            }
+            
+            // Lista de Time Controls usando List para que swipeActions funcione
+            timeControlsList
+            
+            // Botón Add Time Control con estilo Glass
+            addTimeControlButton
+            
+            Spacer()
+                .frame(height: 4)
+            
+            // Botón Done con estilo Glass
+            doneButton
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+    }
+    
+    private var parcFermeButton: some View {
+        Button(action: {
+            selectedTimeControl = nil
+            showingTimePicker = true
+        }) {
+            HStack {
+                Text("Parc Ferme:")
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.white)
+                Spacer()
+                if let pfTime = raceConfig.parcFermeTime {
+                    Text(formatTime(pfTime))
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
+                        .foregroundColor(.green)
+                } else {
+                    Text("Select time")
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .buttonStyle(GlassButtonStyle(isEnabled: raceConfig.parcFermeTime != nil, height: 80, useGreenBorder: true))
+    }
+    
+    private var addTimeControlButton: some View {
+        Button(action: addTimeControl) {
+            HStack {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.yellow)
+                Text("Add Time Control")
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.yellow)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
+        }
+        .buttonStyle(GlassButtonStyle(height: 60))
+        .padding(.top, 10)
+    }
+    
+    private var doneButton: some View {
+        Button(action: onDone) {
+            Text("Done")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+        }
+        .buttonStyle(GlassButtonStyle())
+        .padding(.top, 10)
+        .padding(.horizontal, 30)
+    }
+    
+    private var timeControlsList: some View {
+        List {
+            ForEach(Array(raceConfig.timeControls.enumerated()), id: \.element.id) { index, tc in
+                timeControlRow(index: index, tc: tc)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .frame(height: CGFloat(raceConfig.timeControls.count) * 95)
+        .scrollDisabled(true)
+    }
+    
+    private func timeControlRow(index: Int, tc: TimeControl) -> some View {
+        HStack {
+            Text(tc.name)
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundColor(.white)
+            Spacer()
+            if let time = tc.scheduledTime {
+                Text(formatTime(time))
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.green)
+            } else {
+                Text("Select time")
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 75)
+        .background(timeControlBackground(isActive: tc.scheduledTime != nil))
+        .opacity(tc.scheduledTime != nil ? 1.0 : 0.8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedTimeControl = tc
+            showingTimePicker = true
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if canDeleteTimeControl(at: index) {
+                Button(role: .destructive) {
+                    deleteTimeControl(tc)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                        .imageScale(.small)
+                }
+            }
+        }
+    }
+    
+    private func timeControlBackground(isActive: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 32)
+            .fill(Material.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 32)
+                    .fill(Color.gray.opacity(isActive ? 0.25 : 0.35))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 32)
+                    .stroke(
+                        isActive ? Color.green.opacity(0.6) : Color.white.opacity(0.4),
+                        lineWidth: 1
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 30)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.2),
+                                Color.clear
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .padding(1)
+            )
+            .shadow(
+                color: Color.black.opacity(0.4),
+                radius: 12,
+                x: 0,
+                y: 4
+            )
     }
 }
 
@@ -287,35 +431,64 @@ struct TimePickerView: View {
     }
     
     var body: some View {
-        VStack {
-            DatePicker(
-                "Select Time",
-                selection: $selectedTime,
-                in: minimumTime...,
-                displayedComponents: [.hourAndMinute]
+        ZStack {
+            // Background
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.09, green: 0.145, blue: 0.229),
+                    Color(red: 0.118, green: 0.227, blue: 0.441),
+                    Color(red: 0.09, green: 0.145, blue: 0.229)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
             )
-            .datePickerStyle(.wheel)
-            .labelsHidden()
+            .ignoresSafeArea()
             
-            Button("Done") {
-                // Normalizar el tiempo seleccionado a :00 segundos (sin segundos ni microsegundos)
-                let calendar = Calendar.current
-                let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime)
-                guard let normalizedTime = calendar.date(from: components) else {
-                    onTimeSelected(selectedTime)
-                    dismiss()
-                    return
-                }
+            VStack(spacing: 16) {
+                // Espacio superior para separar del botón de back
+                Spacer()
+                    .frame(height: 10)
                 
-                // Validar que la hora normalizada sea mayor o igual a la mínima
-                let validatedTime = max(normalizedTime, minimumTime)
-                onTimeSelected(validatedTime)
-                dismiss()
+                // DatePicker con altura para mostrar solo 3 valores
+                DatePicker(
+                    "Select Time",
+                    selection: $selectedTime,
+                    in: minimumTime...,
+                    displayedComponents: [.hourAndMinute]
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .frame(height: 80) // Altura para mostrar solo 3 valores
+                
+            
+                
+                // Botón Done con ancho completo de la pantalla (igual que otros menús)
+                Button(action: {
+                    // Normalizar el tiempo seleccionado a :00 segundos (sin segundos ni microsegundos)
+                    let calendar = Calendar.current
+                    let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime)
+                    guard let normalizedTime = calendar.date(from: components) else {
+                        onTimeSelected(selectedTime)
+                        dismiss()
+                        return
+                    }
+                    
+                    // Validar que la hora normalizada sea mayor o igual a la mínima
+                    let validatedTime = max(normalizedTime, minimumTime)
+                    onTimeSelected(validatedTime)
+                    dismiss()
+                }) {
+                    Text("Done")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(GlassButtonStyle(height: 50))
             }
-            .buttonStyle(.glassProminent)
-            .tint(.yellow)
+            .padding(.horizontal, 8) // Padding del VStack (igual que otros menús)
+            .padding(.vertical, 16)
         }
-        .padding()
     }
 }
 

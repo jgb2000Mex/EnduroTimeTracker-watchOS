@@ -14,13 +14,10 @@ struct GoView: View {
     @State private var nextTimeControlTime: Date = Date()
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             // Spacer para dejar espacio para el header del sistema
             Spacer()
                 .frame(height: 2)
-            
-            Spacer()
-                .frame(height: 4)
             
             // Nombre del TC
             Text(timeControlName)
@@ -30,29 +27,29 @@ struct GoView: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .padding(.horizontal, 4)
+                .padding(.bottom, -5)
             
             // GO! grande
             Text("GO!")
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(.system(size: 70, weight: .bold, design: .rounded))
                 .foregroundColor(.green)
             
             Spacer()
-                .frame(height: 4)
+                .frame(height: 20)
             
             // Información del siguiente TC
             VStack(spacing: 2) {
                 Text("Time of Next TC")
-                    .font(.system(size: 9))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(.gray)
                 Text(formatTime(nextTimeControlTime))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 25, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
             }
             .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .appBackground()
         .onAppear {
             // Auto-continuar después de 2 segundos
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

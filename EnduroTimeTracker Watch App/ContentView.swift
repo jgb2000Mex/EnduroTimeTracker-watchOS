@@ -35,6 +35,9 @@ struct ContentView: View {
                     },
                     onGo: {
                         currentView = .race
+                    },
+                    onExit: {
+                        currentView = .welcome
                     }
                 )
                 
