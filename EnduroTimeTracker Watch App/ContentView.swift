@@ -58,6 +58,12 @@ struct ContentView: View {
                         raceConfig: raceConfig,
                         onBack: {
                             currentView = .menu
+                        },
+                        onRaceEnd: {
+                            // Resetear toda la configuración de la carrera
+                            raceConfig.reset()
+                            // Volver al Welcome Screen
+                            currentView = .welcome
                         }
                     )
                     .navigationBarTitleDisplayMode(.inline)
@@ -65,7 +71,10 @@ struct ContentView: View {
                 
             case .endOfRace:
                 EndOfRaceView(onDismiss: {
-                    currentView = .menu
+                    // Resetear toda la configuración de la carrera
+                    raceConfig.reset()
+                    // Volver al Welcome Screen
+                    currentView = .welcome
                 })
             }
         }

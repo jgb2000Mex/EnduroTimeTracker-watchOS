@@ -41,5 +41,15 @@ class RaceConfiguration {
             return validTCs.count >= 2
         }
     }
+    
+    /// Resetea toda la configuración de la carrera, borrando todos los tiempos
+    func reset() {
+        hasParcFerme = false
+        parcFermeTime = nil
+        // Borrar todos los tiempos de los Time Controls, pero mantener los nombres
+        for index in timeControls.indices {
+            timeControls[index].scheduledTime = nil
+        }
+    }
 }
 
