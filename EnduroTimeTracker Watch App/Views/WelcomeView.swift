@@ -17,14 +17,14 @@ struct WelcomeView: View {
     
     var body: some View {
         VStack(spacing: 6) {
-            // Icono con tamaño reducido
-            Image(systemName: "timer")
-                .font(.system(size: 40))
-                .foregroundColor(.yellow)
-                .symbolEffect(.pulse, options: .repeating)
+            // Logo de la app
+            Image("AppLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 60, height: 60)
             
             Spacer()
-                .frame(height: 4)
+                .frame(height: 2)
             
             // Texto de bienvenida con tamaños reducidos
             VStack(spacing: 2) {

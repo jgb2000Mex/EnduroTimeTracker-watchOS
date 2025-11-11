@@ -27,10 +27,17 @@ struct RaceView: View {
     @State private var alertExactTimeTriggered = false
     @State private var lastTimeControlId: UUID? = nil
     
-    // Estado para mostrar el overlay de Water Lock al iniciar la carrera
+    // Estado para mostrar el overlay de Screen Lock al iniciar la carrera
     // Solo se muestra una vez al inicio, no entre cambios de Time Controls
-    @State private var showWaterLockOverlay = true
-    @State private var hasShownWaterLockOverlay = false // Flag para asegurar que solo se muestre una vez
+    @State private var showInitialScreenLockOverlay = true
+    @State private var hasShownInitialScreenLockOverlay = false // Flag para asegurar que solo se muestre una vez
+    
+    // Estado para el bloqueo de pantalla
+    @State private var isScreenLocked = false
+    @State private var unlockClickCount = 0
+    @State private var lastUnlockClickTime: Date?
+    @State private var showUnlockOverlay = false
+    @State private var hasShownUnlockOverlay = false
     
     var onBack: () -> Void
     var onRaceEnd: (() -> Void)? = nil // Callback opcional para cuando termina la carrera
@@ -59,6 +66,7 @@ struct RaceView: View {
                 )
             } else if getCurrentTimeControl() == nil {
                 // No hay más Time Controls - mostrar End of Race
+                // Desbloquear automáticamente cuando aparece End of Race
                 EndOfRaceView(onDismiss: {
                     // Finalizar workout de HealthKit
                     endHealthKitWorkout()
@@ -72,15 +80,21 @@ struct RaceView: View {
                         dismiss()
                     }
                 })
+                .onAppear {
+                    // Desbloquear automáticamente cuando aparece End of Race
+                    isScreenLocked = false
+                    unlockClickCount = 0
+                    showUnlockOverlay = false // Ocultar overlay al desbloquear
+                }
             } else {
                 ZStack {
                     VStack(spacing: 1) {
-                        // Spacer para dejar espacio para el header del sistema
+                        // Spacer para dejar espacio para el header del sistema y toolbar
                         Spacer()
-                            .frame(height: 2)
+                            .frame(height: 12)
                         
                         // Nombre del siguiente TC
-                        Text(getCurrentTimeControlName())
+                        Text(getTimeLeftTitle())
                             .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -96,11 +110,11 @@ struct RaceView: View {
                             .monospacedDigit()
                         
                         Spacer()
-                            .frame(height: 15)
+                            .frame(height: 8)
                         
                         // Información del siguiente TC
                         VStack(spacing: 2) {
-                            Text("Time of Next TC")
+                            Text(getTimeOfNextTCTitle())
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundColor(.gray)
                             Text(formatTime(getCurrentTimeControlTime()))
@@ -111,11 +125,24 @@ struct RaceView: View {
                         .padding(.bottom, 8)
                     }
                     
-                    // Overlay de Water Lock que aparece solo una vez al iniciar la carrera
+                    // Overlay de Screen Lock que aparece solo una vez al iniciar la carrera
                     // No aparece entre cambios de Time Controls
-                    if showWaterLockOverlay {
-                        waterLockOverlay
+                    if showInitialScreenLockOverlay {
+                        initialScreenLockOverlay
                             .zIndex(1000)
+                    }
+                    
+                    // Overlay de bloqueo de pantalla (invisible, solo bloquea toques)
+                    // Debe estar por encima del overlay informativo para capturar los clicks
+                    if isScreenLocked {
+                        screenLockOverlay
+                            .zIndex(1003)
+                    }
+                    
+                    // Overlay informativo de desbloqueo
+                    if showUnlockOverlay {
+                        unlockOverlay
+                            .zIndex(1002)
                     }
                 }
             }
@@ -136,16 +163,16 @@ struct RaceView: View {
             updateTimeRemaining()
             startTimer()
             
-            // Mostrar overlay de Water Lock solo una vez al iniciar la carrera
+            // Mostrar overlay de Screen Lock solo una vez al iniciar la carrera
             // No se muestra entre cambios de Time Controls
-            if !hasShownWaterLockOverlay {
-                hasShownWaterLockOverlay = true
-                showWaterLockOverlay = true
+            if !hasShownInitialScreenLockOverlay {
+                hasShownInitialScreenLockOverlay = true
+                showInitialScreenLockOverlay = true
                 
                 // Se cierra automáticamente después de 6 segundos
                 DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
                     withAnimation(.easeOut(duration: 0.3)) {
-                        showWaterLockOverlay = false
+                        showInitialScreenLockOverlay = false
                     }
                 }
             }
@@ -156,14 +183,48 @@ struct RaceView: View {
         // NOTA: No finalizar el workout en onDisappear porque puede llamarse múltiples veces
         // El workout se finaliza explícitamente cuando termina la carrera (en EndOfRaceView)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: {
-                    onBack()
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
-                        .font(.system(size: 12))
+            // Solo mostrar toolbar cuando no estamos en End of Race
+            if getCurrentTimeControl() != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            // Solo permitir regresar si la pantalla no está bloqueada
+                            if !isScreenLocked {
+                                onBack()
+                                dismiss()
+                            }
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .foregroundColor(.white)
+                                .font(.system(size: 12))
+                        }
+                        .disabled(isScreenLocked) // Deshabilitar el botón cuando está bloqueado
+                        
+                        Button(action: {
+                            // Solo permite bloquear cuando está desbloqueado
+                            // Para desbloquear, se requieren 4 clicks en la pantalla
+                            if !isScreenLocked {
+                                withAnimation(.easeOut(duration: 0.3)) {
+                                    isScreenLocked = true
+                                    // Mostrar overlay informativo de desbloqueo
+                                    showUnlockOverlay = true
+                                    hasShownUnlockOverlay = false
+                                    
+                                    // Se cierra automáticamente después de 6 segundos
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                                        withAnimation(.easeOut(duration: 0.3)) {
+                                            showUnlockOverlay = false
+                                        }
+                                    }
+                                }
+                            }
+                        }) {
+                            Image(systemName: isScreenLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(isScreenLocked ? .red : .green)
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .disabled(isScreenLocked) // Deshabilitar el botón cuando está bloqueado
+                    }
                 }
             }
         }
@@ -204,6 +265,75 @@ struct RaceView: View {
             return control.name
         }
         return "End of Race"
+    }
+    
+    private func getTimeLeftTitle() -> String {
+        guard let control = getCurrentTimeControl() else {
+            return "End of Race"
+        }
+        
+        let allControls = getAllControls()
+        let isParcFerme = control.name == "Parc Ferme"
+        let isLastControl = currentTimeControlIndex >= allControls.count - 1
+        
+        // Verificar si es TC1 (primer control que no es Parc Ferme)
+        let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+        let isTC1 = currentTimeControlIndex == firstNonParcFermeIndex && !isParcFerme
+        
+        if isParcFerme {
+            return "Time left for Parc Ferme"
+        } else if isTC1 {
+            return "Time left to Begin Race"
+        } else if isLastControl {
+            return "Time left to Finish Race"
+        } else {
+            // TC2 en adelante: extraer el número del nombre (ej: "Time Control 2" -> "TC2")
+            // Intentar extraer el número del nombre del TC
+            let name = control.name
+            if let numberMatch = name.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(name[numberMatch])
+                return "Time left for TC\(number)"
+            } else {
+                // Si no se puede extraer el número, usar el nombre completo
+                return "Time left for \(name)"
+            }
+        }
+    }
+    
+    private func getTimeOfNextTCTitle() -> String {
+        guard let control = getCurrentTimeControl() else {
+            return "End of Race"
+        }
+        
+        let allControls = getAllControls()
+        let isParcFerme = control.name == "Parc Ferme"
+        let isLastControl = currentTimeControlIndex >= allControls.count - 1
+        
+        // Verificar si es TC1 (primer control que no es Parc Ferme)
+        let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+        let isTC1 = currentTimeControlIndex == firstNonParcFermeIndex && !isParcFerme
+        
+        // Verificar si Parc Ferme ya pasó (si existe y su índice es menor al actual)
+        let parcFermeIndex = allControls.firstIndex { $0.name == "Parc Ferme" }
+        let parcFermeHasPassed = parcFermeIndex != nil && currentTimeControlIndex > parcFermeIndex!
+        
+        if isParcFerme {
+            return "Time to enter Parc Ferme"
+        } else if isTC1 && (parcFermeIndex == nil || parcFermeHasPassed) {
+            return "Time of Race Start"
+        } else if isLastControl {
+            return "Time of Race Finish"
+        } else {
+            // TC2 en adelante: extraer el número del nombre (ej: "Time Control 2" -> "TC2")
+            let name = control.name
+            if let numberMatch = name.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(name[numberMatch])
+                return "Time of TC\(number)"
+            } else {
+                // Si no se puede extraer el número, usar el nombre completo
+                return "Time of \(name)"
+            }
+        }
     }
     
     private func getCurrentTimeControlTime() -> Date {
@@ -646,8 +776,8 @@ struct RaceView: View {
         }
     }
     
-    // MARK: - Water Lock Overlay
-    private var waterLockOverlay: some View {
+    // MARK: - Screen Lock Overlay (informativo al inicio)
+    private var initialScreenLockOverlay: some View {
         ZStack {
             // Fondo semi-transparente
             Color.black.opacity(0.75)
@@ -657,15 +787,15 @@ struct RaceView: View {
             VStack(spacing: 20) {
                 Spacer()
                 
-                // Icono de Water Lock grande y centrado
-                Image(systemName: "drop.fill")
+                // Icono de Padlock grande y centrado
+                Image(systemName: "lock.fill")
                     .font(.system(size: 70, weight: .bold))
-                    .foregroundColor(.cyan)
+                    .foregroundColor(.white)
                     .symbolEffect(.pulse, options: .repeating)
                     .padding(.bottom, 8)
                 
                 // Mensaje
-                Text("Enable Water Lock to avoid accidental touches")
+                Text("Lock screen to prevent accidental touches")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -683,10 +813,98 @@ struct RaceView: View {
         .onTapGesture {
             // Cerrar el overlay al tocar
             withAnimation(.easeOut(duration: 0.3)) {
-                showWaterLockOverlay = false
+                showInitialScreenLockOverlay = false
             }
         }
-        .allowsHitTesting(showWaterLockOverlay) // Solo permitir toques cuando está visible
+        .allowsHitTesting(showInitialScreenLockOverlay) // Solo permitir toques cuando está visible
+    }
+    
+    // MARK: - Unlock Overlay
+    private var unlockOverlay: some View {
+        ZStack {
+            // Fondo semi-transparente (misma opacidad que Screen Lock overlay)
+            Color.black.opacity(0.75)
+                .ignoresSafeArea()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            VStack(spacing: 20) {
+                Spacer()
+                
+                // Icono de desbloqueo grande y centrado
+                // Usando lock.open.fill para consistencia con el icono de bloqueo
+                Image(systemName: "lock.open.fill")
+                    .font(.system(size: 70, weight: .bold))
+                    .foregroundColor(.white)
+                    .symbolEffect(.pulse, options: .repeating)
+                    .padding(.bottom, 8)
+                
+                // Mensaje
+                Text("To unlock press screen 4 times")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .minimumScaleFactor(0.85)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Cerrar el overlay al tocar
+            withAnimation(.easeOut(duration: 0.3)) {
+                showUnlockOverlay = false
+            }
+        }
+        .allowsHitTesting(showUnlockOverlay) // Solo permitir toques cuando está visible
+    }
+    
+    // MARK: - Screen Lock Overlay
+    private var screenLockOverlay: some View {
+        ZStack {
+            // Overlay invisible que bloquea los toques pero permite ver el contenido
+            // Solo captura los toques para detectar los 4 clicks de desbloqueo
+            Color.clear
+                .ignoresSafeArea()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    handleUnlockTap()
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true) // Permitir toques para detectar los 4 clicks
+    }
+    
+    /// Maneja los taps para desbloquear la pantalla (requiere 4 clicks)
+    private func handleUnlockTap() {
+        let now = Date()
+        
+        // Si han pasado más de 2 segundos desde el último click, resetear el contador
+        // Aumentado a 3 segundos para dar más tiempo entre clicks
+        if let lastClick = lastUnlockClickTime, now.timeIntervalSince(lastClick) > 2.0 {
+            unlockClickCount = 0
+        }
+        
+        unlockClickCount += 1
+        lastUnlockClickTime = now
+        
+        print("🔓 [Screen Lock] Click \(unlockClickCount) de 4 para desbloquear")
+        
+        // Si se han hecho 4 clicks, desbloquear
+        if unlockClickCount >= 4 {
+            print("🔓 [Screen Lock] Desbloqueando pantalla")
+            withAnimation(.easeOut(duration: 0.3)) {
+                isScreenLocked = false
+                unlockClickCount = 0
+                lastUnlockClickTime = nil
+                showUnlockOverlay = false // Ocultar overlay al desbloquear
+            }
+        }
     }
 }
 

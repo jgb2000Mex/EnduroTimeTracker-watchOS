@@ -11,13 +11,20 @@ struct EndOfRaceView: View {
     var onDismiss: () -> Void
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             // Spacer para dejar espacio para el header del sistema
             Spacer()
                 .frame(height: 2)
             
             Spacer()
                 .frame(maxHeight: .infinity)
+            
+            // Icono de bandera a cuadros (Finish Flag)
+            Image("ChequeredFlag")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 80, height: 80)
+                .padding(.bottom, 1)
             
             // Mensaje End of Race
             Text("End of Race")

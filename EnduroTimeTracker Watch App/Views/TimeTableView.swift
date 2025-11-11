@@ -113,6 +113,35 @@ struct TimeTableView: View {
         return formatter.string(from: date)
     }
     
+    /// Obtiene el nombre de display para un Time Control
+    /// - El primer TC siempre muestra "Race Start"
+    /// - El último TC muestra "Race Finish" solo si hay al menos un TC con tiempo seleccionado
+    /// - Los demás muestran "TC2", "TC3", etc.
+    private func getDisplayName(for tc: TimeControl, at index: Int) -> String {
+        let isFirst = index == 0
+        let isLast = index == raceConfig.timeControls.count - 1
+        
+        // Verificar si hay al menos un TC con tiempo seleccionado (usuario ya presionó Done)
+        let hasAnyTimeSelected = raceConfig.timeControls.contains { $0.scheduledTime != nil } ||
+                                 (raceConfig.hasParcFerme && raceConfig.parcFermeTime != nil)
+        
+        if isFirst {
+            return "Race Start"
+        } else if isLast && hasAnyTimeSelected {
+            return "Race Finish"
+        } else {
+            // Extraer el número del nombre (ej: "Time Control 2" -> "TC2")
+            let name = tc.name
+            if let numberMatch = name.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(name[numberMatch])
+                return "TC\(number)"
+            } else {
+                // Si no se puede extraer el número, usar el nombre completo
+                return name
+            }
+        }
+    }
+    
     private func getInitialTime() -> Date {
         if let selectedTC = selectedTimeControl {
             // Si el TC seleccionado ya tiene hora, usar esa
@@ -339,7 +368,7 @@ struct TimeTableView: View {
     
     private func timeControlRow(index: Int, tc: TimeControl) -> some View {
         HStack {
-            Text(tc.name)
+            Text(getDisplayName(for: tc, at: index))
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundColor(.white)
             Spacer()
