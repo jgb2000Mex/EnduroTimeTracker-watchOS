@@ -12,7 +12,21 @@ struct MenuView: View {
     
     var onTimeTable: () -> Void
     var onGo: () -> Void
+    var onSettings: () -> Void
     var onExit: (() -> Void)?
+    
+    @ToolbarContentBuilder
+    private func toolbarContent() -> some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(action: {
+                onExit?() // Regresar al Welcome Screen
+            }) {
+                Image(systemName: "chevron.left")
+                    .foregroundColor(.white)
+                    .font(.system(size: 12))
+            }
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -30,107 +44,89 @@ struct MenuView: View {
             
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                // Header Section - App Name positioned below system clock
-                HStack {
-                    Spacer()
-                    // App Name positioned to appear below system clock
-                    Text("Enduro Time Keeper")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.yellow)
-                    // (Color(red: 0.976, green: 0.451, blue: 0.086)) // orange-500
-                        .tracking(0.3)
-                        .offset(y: -12) // Offset negativo para subir y quedar justo debajo del reloj
-                        .padding(.trailing, 12)
-                }
-                .padding(.bottom, 12) // Más espacio antes de los botones
+                // Espacio para el título estático
+                Spacer()
+                    .frame(height: 20)
                 
                 // Main Buttons Section
-                VStack(spacing: 12) {
+                VStack(spacing: .standardButtonSpacing) {
                     // Timetable Button
                     GlassButton(
                         icon: "calendar",
                         iconColor: Color(red: 0.976, green: 0.451, blue: 0.086),
-                        text: "Timetable",
+                        text: "timetableButton".localized,
                         isEnabled: true,
                         action: onTimeTable
                     )
                     
-                    // Go! Button
+                    // Race View Timer Button
                     GlassButton(
-                        icon: "play.fill",
+                        icon: "timer",
                         iconColor: Color(red: 0.976, green: 0.451, blue: 0.086),
-                        text: "Go!",
+                        text: "raceTimerButton".localized,
                         isEnabled: raceConfig.isValid,
                         action: onGo
+                    )
+                    
+                    // Settings Button
+                    GlassButton(
+                        icon: "gearshape",
+                        iconColor: Color(red: 0.976, green: 0.451, blue: 0.086),
+                        text: "settingsButton".localized,
+                        isEnabled: true,
+                        action: onSettings
                     )
                 }
                 .padding(.horizontal, 8)
                 
                 Spacer()
                     .frame(minHeight: 20)
-                
-                // Bottom Exit Button - mismo color que los botones principales
-                Button(action: {
-                    if let onExit = onExit {
-                        onExit()
-                    } else {
-                        exit(0)
-                    }
-                }) {
-                    ZStack {
-                        // Mismo estilo glass morphism que los botones principales
-                        Circle()
-                            .fill(
-                                Material.ultraThinMaterial
-                            )
-                            .overlay(
-                                // Mismo color gris que los botones principales
-                                Circle()
-                                    .fill(Color.gray.opacity(0.25))
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        Color.white.opacity(0.4), // Mismo borde que los botones principales
-                                        lineWidth: 1
-                                    )
-                            )
-                            .overlay(
-                                // Inner highlight gradient
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color.white.opacity(0.2),
-                                                Color.clear
-                                            ]),
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    .padding(1)
-                            )
-                            .shadow(
-                                color: Color.black.opacity(0.4),
-                                radius: 12,
-                                x: 0,
-                                y: 4
-                            )
-                        
-                        Image(systemName: "xmark")
-                            .font(.system(size: 25, weight: .light))
-                            .foregroundColor(.yellow)
-                    }
-                    .frame(width: 40, height: 40)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .padding(.bottom, 16)
                 }
                 .frame(maxWidth: .infinity)
             }
             .scrollContentBackground(.hidden)
+            
+            // Overlay con degradado del fondo para cubrir el área del toolbar y desvanecer burbujas
+            VStack(spacing: 0) {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.09, green: 0.145, blue: 0.229),  // blue-950 opaco
+                        Color(red: 0.09, green: 0.145, blue: 0.229).opacity(0.8), // ligeramente transparente
+                        Color(red: 0.09, green: 0.145, blue: 0.229).opacity(0.0) // completamente transparente
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 90) // Altura suficiente para cubrir toolbar + título
+                .allowsHitTesting(false) // No interceptar toques
+                
+                Spacer()
+            }
+            .zIndex(1) // Por encima del ScrollView pero debajo del título y toolbar
+            .ignoresSafeArea(.container, edges: .top) // Restaurar para que cubra el toolbar y desvanezca las burbujas
+            
+            
+            // Header Section - Screen Title positioned below system clock (estático, fuera del ScrollView)
+            VStack {
+                HStack {
+                    Spacer()
+                    // Screen Title positioned to appear below system clock
+                    Text("mainMenu".localized)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .tracking(0.3)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                        .offset(y: -15) // Offset más agresivo para compensar el NavigationStack
+                        .padding(.trailing, 12)
+                }
+                .padding(.top, -10) // Padding más negativo para compensar el NavigationStack
+                
+                Spacer()
+            }
+            .zIndex(3) // Por encima del degradado y las burbujas
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(content: toolbarContent)
     }
 }
 
@@ -145,45 +141,6 @@ struct GlassButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                // Main button background with glass effect (gris con sombra)
-                RoundedRectangle(cornerRadius: 32)
-                    .fill(
-                        Material.ultraThinMaterial
-                    )
-                    .overlay(
-                        // Color gris más pronunciado (gray-500/35)
-                        RoundedRectangle(cornerRadius: 32)
-                            .fill(Color.gray.opacity(0.25))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 32)
-                            .stroke(
-                                Color.white.opacity(0.4), // border-gray-400/40
-                                lineWidth: 1
-                            )
-                    )
-                    .overlay(
-                        // Inner highlight gradient
-                        RoundedRectangle(cornerRadius: 30)
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color.white.opacity(0.2), // inset highlight
-                                        Color.clear
-                                    ]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .padding(1)
-                    )
-                    .shadow(
-                        color: Color.black.opacity(0.4),
-                        radius: 12,
-                        x: 0,
-                        y: 4
-                    )
-                
                 // Content
                 HStack {
                     // Left side: Icon and Text
@@ -196,6 +153,8 @@ struct GlassButton: View {
                         Text(text)
                             .font(.system(size: 16, weight: .regular, design: .rounded))
                             .foregroundColor(isEnabled ? .white : .gray)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(2)
                     }
                     
                     Spacer()
@@ -218,11 +177,9 @@ struct GlassButton: View {
                 }
                 .padding(.horizontal, 12)
             }
-            .frame(height: 80)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(GlassButtonStyle(isEnabled: isEnabled, height: .standardButtonHeight))
         .disabled(!isEnabled)
-        .opacity(isEnabled ? 1.0 : 0.6)
     }
 }
 
@@ -231,6 +188,7 @@ struct GlassButton: View {
         raceConfig: RaceConfiguration(),
         onTimeTable: {},
         onGo: {},
+        onSettings: {},
         onExit: nil
     )
 }

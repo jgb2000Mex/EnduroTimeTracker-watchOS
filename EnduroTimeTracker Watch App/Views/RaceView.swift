@@ -39,6 +39,15 @@ struct RaceView: View {
     @State private var showUnlockOverlay = false
     @State private var hasShownUnlockOverlay = false
     
+    // Estados para penalizaciones
+    @State private var showPenaltyConfirmation = false
+    @State private var showPenaltyPicker = false
+    @State private var selectedPenaltyMinutes = 1
+    
+    // Timestamp para rastrear cuándo se entró a la vista
+    // Esto previene que GO! aparezca durante los primeros 3 segundos
+    @State private var viewAppearedAt: Date?
+    
     var onBack: () -> Void
     var onRaceEnd: (() -> Void)? = nil // Callback opcional para cuando termina la carrera
     
@@ -56,15 +65,9 @@ struct RaceView: View {
             )
             .ignoresSafeArea()
             
-            if showGoScreen {
-                GoView(
-                    timeControlName: getCurrentTimeControlName(),
-                    onContinue: {
-                        showGoScreen = false
-                        moveToNextTimeControl()
-                    }
-                )
-            } else if getCurrentTimeControl() == nil {
+            // Verificar primero si la carrera ya acabó (no hay más controles)
+            // Si acabó, no mostrar GO! aunque showGoScreen esté en true
+            if getCurrentTimeControl() == nil {
                 // No hay más Time Controls - mostrar End of Race
                 // Desbloquear automáticamente cuando aparece End of Race
                 EndOfRaceView(onDismiss: {
@@ -81,114 +84,132 @@ struct RaceView: View {
                     }
                 })
                 .onAppear {
+                    // Asegurar que showGoScreen esté en false cuando aparece End of Race
+                    showGoScreen = false
                     // Desbloquear automáticamente cuando aparece End of Race
                     isScreenLocked = false
                     unlockClickCount = 0
                     showUnlockOverlay = false // Ocultar overlay al desbloquear
                 }
             } else {
-                ZStack {
-                    VStack(spacing: 1) {
-                        // Spacer para dejar espacio para el header del sistema y toolbar
-                        Spacer()
-                            .frame(height: 12)
-                        
-                        // Nombre del siguiente TC
-                        Text(getTimeLeftTitle())
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.8)
-                            .padding(.horizontal, 4)
-                        
-                        // Countdown grande
-                        Text(formatCountdown(timeRemaining))
-                            .font(.system(size: 55, weight: .bold, design: .rounded))
-                            .foregroundColor(.orange)
-                            .monospacedDigit()
-                        
-                        Spacer()
-                            .frame(height: 8)
-                        
-                        // Información del siguiente TC
-                        VStack(spacing: 2) {
-                            Text(getTimeOfNextTCTitle())
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundColor(.gray)
-                            Text(formatTime(getCurrentTimeControlTime()))
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                // Determinar qué mostrar: GO! o countdown timer
+                // Solo mostrar GO! si showGoScreen es true Y han pasado al menos 5 segundos desde que se entró a la vista
+                let shouldShowGo = showGoScreen && 
+                                   viewAppearedAt != nil && 
+                                   Date().timeIntervalSince(viewAppearedAt!) >= 5.0
+                
+                if shouldShowGo {
+                    // Mostrar pantalla GO! solo si se cumplen todas las condiciones
+                    GoView(
+                        timeControlName: getCurrentTimeControlName(),
+                        onContinue: {
+                            showGoScreen = false
+                            moveToNextTimeControl()
                         }
-                        .padding(.bottom, 8)
-                    }
-                    
-                    // Overlay de Screen Lock que aparece solo una vez al iniciar la carrera
-                    // No aparece entre cambios de Time Controls
-                    if showInitialScreenLockOverlay {
-                        initialScreenLockOverlay
-                            .zIndex(1000)
-                    }
-                    
-                    // Overlay de bloqueo de pantalla (invisible, solo bloquea toques)
-                    // Debe estar por encima del overlay informativo para capturar los clicks
-                    if isScreenLocked {
-                        screenLockOverlay
-                            .zIndex(1003)
-                    }
-                    
-                    // Overlay informativo de desbloqueo
-                    if showUnlockOverlay {
-                        unlockOverlay
-                            .zIndex(1002)
+                    )
+                } else {
+                    // Mostrar countdown timer (ya sea porque showGoScreen es false o porque no han pasado 5 segundos)
+                    ZStack {
+                        VStack(spacing: 1) {
+                            // Spacer para dejar espacio para el header del sistema y toolbar
+                            Spacer()
+                                .frame(height: 12)
+                            
+                            // Nombre del siguiente TC
+                            Text(getTimeLeftTitle())
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 8)
+                            
+                            // Countdown grande
+                            Text(formatCountdown(timeRemaining))
+                                .font(.system(size: 55, weight: .bold, design: .rounded))
+                                .foregroundColor(.orange)
+                                .monospacedDigit()
+                            
+                            Spacer()
+                                .frame(height: 8)
+                            
+                            // Información del siguiente TC
+                            VStack(spacing: 2) {
+                                Text(getTimeOfNextTCTitle())
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.gray)
+                                    .minimumScaleFactor(0.7)
+                                    .lineLimit(2)
+                                Text(formatTime(getCurrentTimeControlTime()))
+                                    .font(.system(size: 35, weight: .bold, design: .rounded))
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .minimumScaleFactor(0.7)
+                                    .lineLimit(1)
+                            }
+                            .padding(.bottom, 8)
+                        }
+                        
+                        // Overlay de Screen Lock que aparece solo una vez al iniciar la carrera
+                        // No aparece entre cambios de Time Controls
+                        if showInitialScreenLockOverlay {
+                            initialScreenLockOverlay
+                                .zIndex(1000)
+                        }
+                        
+                        // Overlay de bloqueo de pantalla (invisible, solo bloquea toques)
+                        // Debe estar por encima del overlay informativo para capturar los clicks
+                        if isScreenLocked {
+                            screenLockOverlay
+                                .zIndex(1003)
+                        }
+                        
+                        // Overlay informativo de desbloqueo
+                        if showUnlockOverlay {
+                            unlockOverlay
+                                .zIndex(1002)
+                        }
+                        
+                        // Overlay de confirmación de penalización
+                        if showPenaltyConfirmation {
+                            penaltyConfirmationOverlay
+                                .zIndex(1004)
+                        }
                     }
                 }
             }
         }
+        .sheet(isPresented: $showPenaltyPicker) {
+            penaltyPickerView
+        }
         .onAppear {
-            // Log del estado inicial
-            let allControls = getAllControls()
-            print("🚀 [RaceView] onAppear - Iniciando carrera")
-            print("🚀 [RaceView] Total de controles: \(allControls.count)")
-            for (index, control) in allControls.enumerated() {
-                print("🚀 [RaceView] Control \(index): \(control.name) a las \(control.time)")
-            }
-            print("🚀 [RaceView] Índice inicial: \(currentTimeControlIndex)")
-            if let currentControl = getCurrentTimeControl() {
-                print("🚀 [RaceView] Control actual: \(currentControl.name) a las \(currentControl.time)")
+            showGoScreen = false
+            viewAppearedAt = Date()
+            
+            if getCurrentTimeControl() != nil {
+                resetAlerts()
+                advancePastExpiredControls()
             }
             
-            updateTimeRemaining()
             startTimer()
             
-            // Mostrar overlay de Screen Lock solo una vez al iniciar la carrera
-            // No se muestra entre cambios de Time Controls
             if !hasShownInitialScreenLockOverlay {
                 hasShownInitialScreenLockOverlay = true
                 showInitialScreenLockOverlay = true
-                
-                // Se cierra automáticamente después de 6 segundos
-                DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
                     withAnimation(.easeOut(duration: 0.3)) {
                         showInitialScreenLockOverlay = false
                     }
                 }
+            } else {
+                showInitialScreenLockOverlay = false
             }
-            
-            // NO iniciar workout aquí - se iniciará cuando llegue al primer Time Control (TC1)
-            // Ver checkGoCondition() y moveToNextTimeControl()
         }
-        // NOTA: No finalizar el workout en onDisappear porque puede llamarse múltiples veces
-        // El workout se finaliza explícitamente cuando termina la carrera (en EndOfRaceView)
         .toolbar {
-            // Solo mostrar toolbar cuando no estamos en End of Race
-            if getCurrentTimeControl() != nil {
+            if getCurrentTimeControl() != nil && !showPenaltyConfirmation && !showPenaltyPicker {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 6) {
                         Button(action: {
-                            // Solo permitir regresar si la pantalla no está bloqueada
                             if !isScreenLocked {
                                 onBack()
                                 dismiss()
@@ -198,20 +219,15 @@ struct RaceView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 12))
                         }
-                        .disabled(isScreenLocked) // Deshabilitar el botón cuando está bloqueado
+                        .disabled(isScreenLocked)
                         
                         Button(action: {
-                            // Solo permite bloquear cuando está desbloqueado
-                            // Para desbloquear, se requieren 4 clicks en la pantalla
                             if !isScreenLocked {
                                 withAnimation(.easeOut(duration: 0.3)) {
                                     isScreenLocked = true
-                                    // Mostrar overlay informativo de desbloqueo
                                     showUnlockOverlay = true
                                     hasShownUnlockOverlay = false
-                                    
-                                    // Se cierra automáticamente después de 6 segundos
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
                                         withAnimation(.easeOut(duration: 0.3)) {
                                             showUnlockOverlay = false
                                         }
@@ -223,7 +239,20 @@ struct RaceView: View {
                                 .foregroundColor(isScreenLocked ? .red : .green)
                                 .font(.system(size: 14, weight: .semibold))
                         }
-                        .disabled(isScreenLocked) // Deshabilitar el botón cuando está bloqueado
+                        .disabled(isScreenLocked)
+                        
+                        Button(action: {
+                            if !isScreenLocked && isPenaltyButtonEnabled() {
+                                showPenaltyConfirmation = true
+                            }
+                        }) {
+                            Image("Penalty icon")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 18, height: 18)
+                                .foregroundColor(isPenaltyButtonEnabled() ? .white : .gray)
+                        }
+                        .disabled(isScreenLocked || !isPenaltyButtonEnabled())
                     }
                 }
             }
@@ -231,8 +260,6 @@ struct RaceView: View {
         .onDisappear {
             timer?.invalidate()
         }
-        // Nota: watchOS maneja automáticamente el always-on display
-        // El timer continuará funcionando en background
     }
     
     private func getCurrentTimeControl() -> (name: String, time: Date)? {
@@ -243,7 +270,39 @@ struct RaceView: View {
         return allControls[currentTimeControlIndex]
     }
     
-    private func getAllControls() -> [(name: String, time: Date)] {
+    private func getFirstNonParcFermeIndex() -> Int {
+        let allControls = getAllControls()
+        return allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+    }
+    
+    private func resetAlerts() {
+        alert2MinutesTriggered = false
+        alert1MinuteTriggered = false
+        alertExactTimeTriggered = false
+    }
+    
+    private func advancePastExpiredControls() {
+        let now = Date()
+        let calendar = Calendar.current
+        let threshold: TimeInterval = 5.0
+        
+        var maxIterations = 10
+        while maxIterations > 0, let control = getCurrentTimeControl() {
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: control.time)
+            guard let normalizedTime = calendar.date(from: components),
+                  now.timeIntervalSince(normalizedTime) > threshold else {
+                break
+            }
+            
+            showGoScreen = false
+            moveToNextTimeControl()
+            viewAppearedAt = Date()
+            maxIterations -= 1
+        }
+    }
+    
+    /// Obtiene los controles originales (sin ajustar por penalizaciones)
+    private func getOriginalControls() -> [(name: String, time: Date)] {
         var controls: [(name: String, time: Date)] = []
         
         if raceConfig.hasParcFerme, let pfTime = raceConfig.parcFermeTime {
@@ -260,80 +319,165 @@ struct RaceView: View {
         return controls.sorted { $0.time < $1.time }
     }
     
+    private func getAllControls() -> [(name: String, time: Date)] {
+        let sortedControls = getOriginalControls()
+        
+        // Aplicar penalizaciones a los tiempos
+        var adjustedControls: [(name: String, time: Date)] = []
+        for (index, control) in sortedControls.enumerated() {
+            let accumulatedPenalty = raceConfig.getAccumulatedPenalty(for: index)
+            let adjustedTime = control.time.addingTimeInterval(TimeInterval(accumulatedPenalty * 60))
+            adjustedControls.append((control.name, adjustedTime))
+        }
+        
+        return adjustedControls
+    }
+    
+    private func isPenaltyButtonEnabled() -> Bool {
+        let originalControls = getOriginalControls()
+        guard currentTimeControlIndex < originalControls.count else { return false }
+        
+        let currentControl = originalControls[currentTimeControlIndex]
+        if currentControl.name == "Parc Ferme" { return false }
+        
+        let parcFermeIndex = originalControls.firstIndex { $0.name == "Parc Ferme" }
+        if let pfIndex = parcFermeIndex, currentTimeControlIndex <= pfIndex { return false }
+        
+        let firstNonParcFermeIndex = originalControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+        return currentTimeControlIndex > firstNonParcFermeIndex
+    }
+    
+    /// Calcula el máximo de minutos negativos permitidos para una penalización
+    /// Basado en el tiempo disponible hasta el siguiente Time Control
+    /// La penalización se aplica desde el control actual en adelante
+    private func getMaxNegativePenaltyMinutes() -> Int {
+        let originalControls = getOriginalControls()
+        print("🔍 [getMaxNegativePenaltyMinutes] currentTimeControlIndex: \(currentTimeControlIndex), totalControls: \(originalControls.count)")
+        guard currentTimeControlIndex < originalControls.count - 1 else {
+            print("🔍 [getMaxNegativePenaltyMinutes] Es el último control (índice \(currentTimeControlIndex) de \(originalControls.count)), retornando 0")
+            return 0 // No se puede restar tiempo si es el último control
+        }
+        
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // Obtener el siguiente control
+        let nextIndex = currentTimeControlIndex + 1
+        guard nextIndex < originalControls.count else {
+            print("🔍 [getMaxNegativePenaltyMinutes] nextIndex fuera de rango: \(nextIndex) >= \(originalControls.count)")
+            return 0
+        }
+        
+        let nextControlOriginal = originalControls[nextIndex]
+        print("🔍 [getMaxNegativePenaltyMinutes] Siguiente control: \(nextControlOriginal.name) a las \(nextControlOriginal.time)")
+        
+        // Calcular la penalización acumulada actual hasta el control actual (antes de aplicar la nueva)
+        let currentAccumulatedPenalty = raceConfig.getAccumulatedPenalty(for: currentTimeControlIndex)
+        print("🔍 [getMaxNegativePenaltyMinutes] Penalización acumulada hasta control actual: \(currentAccumulatedPenalty) minutos")
+        
+        // El tiempo del siguiente control con las penalizaciones actuales (sin la nueva penalización)
+        // La penalización se aplica desde el control actual en adelante, así que el siguiente control
+        // ya tiene la penalización acumulada hasta el control actual
+        let nextControlTimeWithCurrentPenalties = nextControlOriginal.time.addingTimeInterval(TimeInterval(currentAccumulatedPenalty * 60))
+        print("🔍 [getMaxNegativePenaltyMinutes] Tiempo del siguiente control con penalizaciones: \(nextControlTimeWithCurrentPenalties)")
+        
+        // Normalizar tiempos
+        let nowComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now)
+        guard let normalizedNow = calendar.date(from: nowComponents) else {
+            print("🔍 [getMaxNegativePenaltyMinutes] Error normalizando tiempo actual")
+            return 0
+        }
+        
+        let nextComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: nextControlTimeWithCurrentPenalties)
+        guard let normalizedNext = calendar.date(from: nextComponents) else {
+            print("🔍 [getMaxNegativePenaltyMinutes] Error normalizando tiempo del siguiente control")
+            return 0
+        }
+        
+        // Calcular la diferencia en minutos (tiempo disponible hasta el siguiente control)
+        let timeDifference = normalizedNext.timeIntervalSince(normalizedNow)
+        let minutesAvailable = Int(timeDifference / 60)
+        
+        print("🔍 [getMaxNegativePenaltyMinutes] now: \(normalizedNow), next: \(normalizedNext), diff: \(timeDifference) segundos, minutes: \(minutesAvailable)")
+        
+        // El máximo negativo es el tiempo disponible (no puede ser negativo)
+        // Si hay menos de 1 minuto disponible, no se puede restar nada
+        let result = max(0, minutesAvailable)
+        print("🔍 [getMaxNegativePenaltyMinutes] returning: \(result)")
+        return result
+    }
+    
+    /// Aplica una penalización desde el control actual en adelante
+    /// Si la penalización es negativa y excede el tiempo disponible, se ajusta al máximo permitido
+    private func applyPenalty(minutes: Int) {
+        var adjustedMinutes = minutes
+        
+        // Si es una penalización negativa, validar y ajustar si es necesario
+        if minutes < 0 {
+            let maxNegative = getMaxNegativePenaltyMinutes()
+            let minValue = -maxNegative
+            if minutes < minValue {
+                // Ajustar al máximo negativo permitido
+                adjustedMinutes = minValue
+                print("⚠️ [Penalty] Penalización negativa ajustada de \(minutes) a \(adjustedMinutes) minutos (máximo permitido)")
+            }
+        }
+        
+        let originalControls = getOriginalControls()
+        let totalControls = originalControls.count
+        raceConfig.applyPenalty(minutes: adjustedMinutes, fromIndex: currentTimeControlIndex, totalControls: totalControls)
+        
+        // Actualizar el tiempo restante para reflejar la penalización
+        updateTimeRemaining()
+    }
+    
     private func getCurrentTimeControlName() -> String {
         if let control = getCurrentTimeControl() {
             return control.name
         }
-        return "End of Race"
+        return "endOfRace".localized
     }
     
     private func getTimeLeftTitle() -> String {
-        guard let control = getCurrentTimeControl() else {
-            return "End of Race"
-        }
+        guard let control = getCurrentTimeControl() else { return "endOfRace".localized }
         
         let allControls = getAllControls()
         let isParcFerme = control.name == "Parc Ferme"
         let isLastControl = currentTimeControlIndex >= allControls.count - 1
-        
-        // Verificar si es TC1 (primer control que no es Parc Ferme)
-        let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+        let firstNonParcFermeIndex = getFirstNonParcFermeIndex()
         let isTC1 = currentTimeControlIndex == firstNonParcFermeIndex && !isParcFerme
         
-        if isParcFerme {
-            return "Time left for Parc Ferme"
-        } else if isTC1 {
-            return "Time left to Begin Race"
-        } else if isLastControl {
-            return "Time left to Finish Race"
-        } else {
-            // TC2 en adelante: extraer el número del nombre (ej: "Time Control 2" -> "TC2")
-            // Intentar extraer el número del nombre del TC
-            let name = control.name
-            if let numberMatch = name.range(of: #"\d+"#, options: .regularExpression) {
-                let number = String(name[numberMatch])
-                return "Time left for TC\(number)"
-            } else {
-                // Si no se puede extraer el número, usar el nombre completo
-                return "Time left for \(name)"
-            }
+        if isParcFerme { return "timeLeftForParcFerme".localized }
+        if isTC1 { return "timeLeftToBeginRace".localized }
+        if isLastControl { return "timeLeftToFinishRace".localized }
+        
+        if let numberMatch = control.name.range(of: #"\d+"#, options: .regularExpression) {
+            let number = String(control.name[numberMatch])
+            return "\(LocalizationManager.shared.localizedString("timeLeftForTC")) \(number)"
         }
+        return "\(LocalizationManager.shared.localizedString("timeLeftForTC")) \(control.name)"
     }
     
     private func getTimeOfNextTCTitle() -> String {
-        guard let control = getCurrentTimeControl() else {
-            return "End of Race"
-        }
+        guard let control = getCurrentTimeControl() else { return "endOfRace".localized }
         
         let allControls = getAllControls()
         let isParcFerme = control.name == "Parc Ferme"
         let isLastControl = currentTimeControlIndex >= allControls.count - 1
-        
-        // Verificar si es TC1 (primer control que no es Parc Ferme)
-        let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+        let firstNonParcFermeIndex = getFirstNonParcFermeIndex()
         let isTC1 = currentTimeControlIndex == firstNonParcFermeIndex && !isParcFerme
-        
-        // Verificar si Parc Ferme ya pasó (si existe y su índice es menor al actual)
         let parcFermeIndex = allControls.firstIndex { $0.name == "Parc Ferme" }
         let parcFermeHasPassed = parcFermeIndex != nil && currentTimeControlIndex > parcFermeIndex!
         
-        if isParcFerme {
-            return "Time to enter Parc Ferme"
-        } else if isTC1 && (parcFermeIndex == nil || parcFermeHasPassed) {
-            return "Time of Race Start"
-        } else if isLastControl {
-            return "Time of Race Finish"
-        } else {
-            // TC2 en adelante: extraer el número del nombre (ej: "Time Control 2" -> "TC2")
-            let name = control.name
-            if let numberMatch = name.range(of: #"\d+"#, options: .regularExpression) {
-                let number = String(name[numberMatch])
-                return "Time of TC\(number)"
-            } else {
-                // Si no se puede extraer el número, usar el nombre completo
-                return "Time of \(name)"
-            }
+        if isParcFerme { return "timeToEnterParcFerme".localized }
+        if isTC1 && (parcFermeIndex == nil || parcFermeHasPassed) { return "timeOfRaceStart".localized }
+        if isLastControl { return "timeOfRaceFinish".localized }
+        
+        if let numberMatch = control.name.range(of: #"\d+"#, options: .regularExpression) {
+            let number = String(control.name[numberMatch])
+            return "\(LocalizationManager.shared.localizedString("timeOfTC")) \(number)"
         }
+        return "\(LocalizationManager.shared.localizedString("timeOfTC")) \(control.name)"
     }
     
     private func getCurrentTimeControlTime() -> Date {
@@ -359,26 +503,20 @@ struct RaceView: View {
     
     private func updateTimeRemaining() {
         guard let control = getCurrentTimeControl() else {
-            // No hay más Time Controls - la carrera terminó
             timeRemaining = 0
-            showGoScreen = false // Asegurar que no muestre GO!
+            showGoScreen = false
             return
         }
         
-        // Resetear alertas si cambió el Time Control
         let currentControlId = getCurrentTimeControlId()
         if currentControlId != lastTimeControlId {
-            alert2MinutesTriggered = false
-            alert1MinuteTriggered = false
-            alertExactTimeTriggered = false
+            resetAlerts()
             lastTimeControlId = currentControlId
         }
         
-        // Usar la fecha actual del sistema
-        let now = Date()
         let calendar = Calendar.current
+        let now = Date()
         
-        // Normalizar el tiempo actual al segundo exacto (sin microsegundos)
         let nowComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now)
         guard let normalizedNow = calendar.date(from: nowComponents) else {
             timeRemaining = max(0, control.time.timeIntervalSince(now))
@@ -387,22 +525,15 @@ struct RaceView: View {
             return
         }
         
-        // Normalizar el tiempo del control al minuto exacto (:00 segundos)
-        // Esto asegura que cuando el usuario selecciona "5:16", se interprete como "5:16:00"
         let controlComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: control.time)
         guard let normalizedControlTime = calendar.date(from: controlComponents) else {
-            // Fallback: usar el tiempo directamente
             timeRemaining = max(0, control.time.timeIntervalSince(normalizedNow))
             checkGoCondition()
             checkAlerts()
             return
         }
         
-        // Calcular diferencia entre el tiempo del control normalizado (:00) y el tiempo actual normalizado
-        // Esto asegura que si el usuario seleccionó "5:16 p.m.", cuenta hacia "5:16:00" exactamente
-        let remaining = normalizedControlTime.timeIntervalSince(normalizedNow)
-        timeRemaining = max(0, remaining)
-        
+        timeRemaining = max(0, normalizedControlTime.timeIntervalSince(normalizedNow))
         checkGoCondition()
         checkAlerts()
     }
@@ -430,26 +561,21 @@ struct RaceView: View {
     }
     
     private func checkAlerts() {
-        // Verificar si debemos activar las alertas
+        guard let appearedAt = viewAppearedAt,
+              Date().timeIntervalSince(appearedAt) >= 5.0,
+              timeRemaining >= -5.0 else {
+            return
+        }
+        
         let totalSeconds = Int(timeRemaining)
         
-        // Alerta a los 2 minutos (120 segundos exactos)
-        // Verificamos cuando estamos en el segundo 120 o justo después de pasar de 121 a 120
         if totalSeconds == 120 && !alert2MinutesTriggered {
             playNotificationAlert()
             alert2MinutesTriggered = true
-        }
-        
-        // Alerta a 1 minuto (60 segundos exactos)
-        // Verificamos cuando estamos en el segundo 60 o justo después de pasar de 61 a 60
-        if totalSeconds == 60 && !alert1MinuteTriggered {
+        } else if totalSeconds == 60 && !alert1MinuteTriggered {
             playNotificationAlert()
             alert1MinuteTriggered = true
-        }
-        
-        // Alerta en el momento exacto (0 segundos)
-        // Verificamos cuando el tiempo restante es 0 o muy cercano a 0
-        if totalSeconds == 0 && !alertExactTimeTriggered {
+        } else if totalSeconds == 0 && !alertExactTimeTriggered {
             playNotificationAlert()
             alertExactTimeTriggered = true
         }
@@ -491,45 +617,37 @@ struct RaceView: View {
     }
     
     private func checkGoCondition() {
-        // Si ya no hay más Time Controls, no mostrar GO!
         guard let currentControl = getCurrentTimeControl() else {
             showGoScreen = false
             timer?.invalidate()
             return
         }
         
-        // Verificar si llegó a 0 (con un pequeño margen para evitar problemas de precisión)
-        if timeRemaining <= 0.5 && !showGoScreen {
-            // Verificar si hay más Time Controls después de este
-            let allControls = getAllControls()
-            let isLastControl = currentTimeControlIndex >= allControls.count - 1
-            let isParcFerme = currentControl.name == "Parc Ferme"
+        guard let appearedAt = viewAppearedAt,
+              Date().timeIntervalSince(appearedAt) >= 5.0 else {
+            showGoScreen = false
+            return
+        }
+        
+        guard timeRemaining <= 0.5 && !showGoScreen else { return }
+        
+        let allControls = getAllControls()
+        let isLastControl = currentTimeControlIndex >= allControls.count - 1
+        let isParcFerme = currentControl.name == "Parc Ferme"
+        
+        if isLastControl {
+            showGoScreen = false
+            timer?.invalidate()
+            DispatchQueue.main.async {
+                self.currentTimeControlIndex += 1
+            }
+        } else {
+            showGoScreen = true
             
-            print("⏰ [RaceView] checkGoCondition - Llegamos a: \(currentControl.name)")
-            print("⏰ [RaceView] Índice actual: \(currentTimeControlIndex), Es último: \(isLastControl), Es Parc Ferme: \(isParcFerme)")
-            
-            if isLastControl {
-                // Es el último Time Control - avanzar el índice para que se muestre End of Race
-                showGoScreen = false
-                timer?.invalidate() // Detener el timer primero
-                // Usar DispatchQueue para asegurar que la actualización de UI ocurra en el siguiente ciclo
-                DispatchQueue.main.async {
-                    self.currentTimeControlIndex += 1 // Avanzar para que getCurrentTimeControl() retorne nil
-                }
-            } else {
-                // Hay más Time Controls - mostrar GO!
-                // Si es Parc Ferme, solo mostrar pantalla GO! (no iniciar workout)
-                // Si es TC1, verificar si debemos iniciar workout
-                print("⏰ [RaceView] Mostrando pantalla GO! para: \(currentControl.name)")
-                showGoScreen = true
-                
-                // Si llegamos a TC1 (no Parc Ferme) y el workout no ha iniciado, iniciarlo ahora
-                if !isParcFerme && !workoutStarted {
-                    let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
-                    if currentTimeControlIndex == firstNonParcFermeIndex {
-                        print("✅ [Workout] Llegamos al tiempo de TC1, iniciando workout ahora")
-                        startHealthKitWorkout()
-                    }
+            if !isParcFerme && !workoutStarted {
+                let firstNonParcFermeIndex = getFirstNonParcFermeIndex()
+                if currentTimeControlIndex == firstNonParcFermeIndex {
+                    startHealthKitWorkout()
                 }
             }
         }
@@ -587,179 +705,80 @@ struct RaceView: View {
     
     private func moveToNextTimeControl() {
         let allControls = getAllControls()
-        let previousIndex = currentTimeControlIndex
-        let previousControl = getCurrentTimeControl()
-        
-        print("🔄 [RaceView] moveToNextTimeControl() llamado")
-        print("🔄 [RaceView] Índice anterior: \(previousIndex)")
-        if let prev = previousControl {
-            print("🔄 [RaceView] Control anterior: \(prev.name) a las \(prev.time)")
+        guard currentTimeControlIndex < allControls.count - 1 else {
+            timer?.invalidate()
+            return
         }
         
-        if currentTimeControlIndex < allControls.count - 1 {
-            currentTimeControlIndex += 1
-            
-            let currentControl = getCurrentTimeControl()
-            print("🔄 [RaceView] Índice nuevo: \(currentTimeControlIndex)")
-            if let curr = currentControl {
-                print("🔄 [RaceView] Control nuevo: \(curr.name) a las \(curr.time)")
-            }
-            
-            // Verificar si llegamos al primer Time Control REAL (TC1, no Parc Fermé)
-            // TC1 es el primer control que NO es "Parc Ferme"
-            let isParcFerme = currentControl?.name == "Parc Ferme"
-            
-            if let currentControl = currentControl, !isParcFerme {
-                // Este es el primer Time Control real (TC1) - verificar si debemos iniciar workout
-                // Verificar que realmente sea el primer Time Control (no Parc Fermé) en la lista
-                let firstNonParcFermeIndex = allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
-                let isFirstRealTimeControl = currentTimeControlIndex == firstNonParcFermeIndex
-                
-                print("🔍 [Workout] Verificando si es TC1...")
-                print("🔍 [Workout] Es Parc Ferme: \(isParcFerme)")
-                print("🔍 [Workout] Índice actual: \(currentTimeControlIndex)")
-                print("🔍 [Workout] Primer TC real en índice: \(firstNonParcFermeIndex)")
-                print("🔍 [Workout] Es primer TC real: \(isFirstRealTimeControl)")
-                print("🔍 [Workout] Workout ya iniciado: \(workoutStarted)")
-                
-                if isFirstRealTimeControl && !workoutStarted {
-                    // Verificar si el tiempo de TC1 ya llegó o es el tiempo actual
-                    let now = Date()
-                    let tc1Time = currentControl.time
-                    
-                    print("🔍 [Workout] TC1 programado para: \(tc1Time)")
-                    print("🔍 [Workout] Tiempo actual: \(now)")
-                    print("🔍 [Workout] TC1 ya pasó o es ahora: \(tc1Time <= now)")
-                    
-                    // Solo iniciar workout si el tiempo de TC1 ya llegó o es el tiempo actual
-                    // NO iniciar si TC1 es futuro (eso causaría que HealthKit use el tiempo actual)
-                    if tc1Time <= now {
-                        print("✅ [Workout] Llegamos al primer Time Control REAL (TC1): \(currentControl.name)")
-                        print("✅ [Workout] TC1 ya llegó, iniciando workout desde TC1: \(tc1Time)")
-                        startHealthKitWorkout()
-                    } else {
-                        print("⏳ [Workout] TC1 es futuro, NO iniciar workout todavía")
-                        print("⏳ [Workout] El workout se iniciará automáticamente cuando llegue el tiempo de TC1")
-                        print("⏳ [Workout] Programando inicio de workout para: \(tc1Time)")
-                        
-                        // Programar el inicio del workout para cuando llegue TC1
-                        let timeUntilTC1 = tc1Time.timeIntervalSince(now)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + timeUntilTC1) {
-                            // Verificar nuevamente que todavía no se haya iniciado y que sigamos en TC1
-                            if !self.workoutStarted, let currentControl = self.getCurrentTimeControl(),
-                               currentControl.name == tc1Time.description || self.currentTimeControlIndex == firstNonParcFermeIndex {
-                                print("✅ [Workout] Tiempo de TC1 llegó, iniciando workout ahora")
-                                self.startHealthKitWorkout()
-                            }
-                        }
-                    }
-                } else if workoutStarted {
-                    print("ℹ️ [Workout] Workout ya iniciado, continuando con Time Control: \(currentControl.name)")
-                } else {
-                    print("⚠️ [Workout] No es el primer Time Control real (índice: \(currentTimeControlIndex), primer TC: \(firstNonParcFermeIndex))")
-                }
-            } else if isParcFerme {
-                print("ℹ️ [Workout] Llegamos a Parc Ferme - NO iniciar workout todavía")
-                print("ℹ️ [Workout] El workout comenzará cuando lleguemos a TC1")
-            } else {
-                print("⚠️ [Workout] No se pudo obtener el control actual")
-            }
-            
-            // Resetear alertas para el nuevo Time Control
-            alert2MinutesTriggered = false
-            alert1MinuteTriggered = false
-            alertExactTimeTriggered = false
+        currentTimeControlIndex += 1
+        
+        guard let currentControl = getCurrentTimeControl(),
+              currentControl.name != "Parc Ferme" else {
+            resetAlerts()
             lastTimeControlId = getCurrentTimeControlId()
             updateTimeRemaining()
-            // Si ya no hay más controles, actualizar el timer para que se detenga
             if getCurrentTimeControl() == nil {
                 timer?.invalidate()
             }
-        } else {
-            // Ya no hay más Time Controls - invalidar el timer
+            return
+        }
+        
+        let firstNonParcFermeIndex = getFirstNonParcFermeIndex()
+        if currentTimeControlIndex == firstNonParcFermeIndex && !workoutStarted {
+            let now = Date()
+            if currentControl.time <= now {
+                startHealthKitWorkout()
+            } else {
+                let timeUntilTC1 = currentControl.time.timeIntervalSince(now)
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeUntilTC1) {
+                    if !self.workoutStarted, self.currentTimeControlIndex == firstNonParcFermeIndex {
+                        self.startHealthKitWorkout()
+                    }
+                }
+            }
+        }
+        
+        resetAlerts()
+        lastTimeControlId = getCurrentTimeControlId()
+        updateTimeRemaining()
+        
+        if getCurrentTimeControl() == nil {
             timer?.invalidate()
         }
     }
     
     // MARK: - HealthKit Integration
     
-    /// Obtiene el primer Time Control (no Parc Fermé) para iniciar el workout desde ahí
-    private func getFirstTimeControl() -> Date? {
-        let allControls = getAllControls()
-        // Buscar el primer control que NO sea Parc Fermé
-        for control in allControls {
-            if control.name != "Parc Ferme" {
-                return control.time
-            }
-        }
-        // Si no hay Time Controls, usar el primer control disponible (Parc Fermé como fallback)
-        return allControls.first?.time
-    }
-    
-    /// Inicia el workout de HealthKit desde el Time Control actual (TC1)
-    /// IMPORTANTE: Este método solo debe llamarse cuando el control actual es TC1 (no Parc Fermé)
     private func startHealthKitWorkout() {
-        guard !workoutStarted else { 
-            print("⚠️ [Workout] Workout ya está iniciado, ignorando llamada")
-            return 
-        }
-        
-        // Obtener el Time Control actual (debe ser TC1, no Parc Fermé)
-        guard let currentControl = getCurrentTimeControl() else {
-            print("❌ [Workout] No hay Time Control actual")
+        guard !workoutStarted,
+              let currentControl = getCurrentTimeControl(),
+              currentControl.name != "Parc Ferme" else {
             return
         }
         
-        // Verificar explícitamente que NO sea Parc Ferme
-        guard currentControl.name != "Parc Ferme" else {
-            print("❌ [Workout] ERROR: Intento de iniciar workout en Parc Ferme (no permitido)")
-            print("❌ [Workout] El workout solo debe iniciarse en TC1")
-            return
-        }
-        
-        // Verificar que realmente sea el primer Time Control (TC1)
         let allControls = getAllControls()
         let firstNonParcFerme = allControls.first { $0.name != "Parc Ferme" }
-        guard let tc1 = firstNonParcFerme, currentControl.name == tc1.name, currentControl.time == tc1.time else {
-            print("❌ [Workout] ERROR: El control actual no es TC1")
-            print("❌ [Workout] Control actual: \(currentControl.name) a las \(currentControl.time)")
-            if let tc1 = firstNonParcFerme {
-                print("❌ [Workout] TC1 esperado: \(tc1.name) a las \(tc1.time)")
-            }
+        guard let tc1 = firstNonParcFerme,
+              currentControl.name == tc1.name,
+              currentControl.time == tc1.time else {
             return
         }
         
-        // Usar el tiempo del Time Control actual como startTime
-        let tc1Time = currentControl.time
         let now = Date()
-        let actualStartTime: Date
+        let actualStartTime = currentControl.time > now ? now : currentControl.time
         
-        // HealthKit no acepta fechas futuras para startActivity
-        if tc1Time > now {
-            // El Time Control es futuro, usar tiempo actual
-            actualStartTime = now
-            print("⚠️ [Workout] TC1 es futuro (\(tc1Time)), iniciando workout con tiempo actual (\(now))")
-        } else {
-            // El Time Control es pasado o presente, usar su tiempo exacto
-            actualStartTime = tc1Time
-            print("✅ [Workout] Iniciando workout desde TC1: \(currentControl.name) a las \(tc1Time)")
-        }
-        
-        // Iniciar el workout de forma asíncrona
         Task {
             do {
                 try await healthKitManager.startWorkout(startTime: actualStartTime)
                 await MainActor.run {
                     workoutStarted = true
                 }
-                print("✅ [Workout] Workout iniciado exitosamente desde: \(actualStartTime)")
             } catch {
-                print("❌ [Workout] Error iniciando workout: \(error.localizedDescription)")
+                print("Error iniciando workout: \(error.localizedDescription)")
             }
         }
     }
     
-    /// Finaliza el workout de HealthKit cuando termina la carrera
     private func endHealthKitWorkout() {
         guard workoutStarted else { return }
         
@@ -769,7 +788,6 @@ struct RaceView: View {
                 await MainActor.run {
                     workoutStarted = false
                 }
-                print("Workout finalizado y guardado")
             } catch {
                 print("Error finalizando workout: \(error.localizedDescription)")
             }
@@ -795,7 +813,7 @@ struct RaceView: View {
                     .padding(.bottom, 8)
                 
                 // Mensaje
-                Text("Lock screen to prevent accidental touches")
+                Text("lockScreenMessage".localized)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -839,7 +857,7 @@ struct RaceView: View {
                     .padding(.bottom, 8)
                 
                 // Mensaje
-                Text("To unlock press screen 4 times")
+                Text("unlockMessage".localized)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -903,6 +921,162 @@ struct RaceView: View {
                 unlockClickCount = 0
                 lastUnlockClickTime = nil
                 showUnlockOverlay = false // Ocultar overlay al desbloquear
+            }
+        }
+    }
+    
+    // MARK: - Penalty Overlays
+    
+    private var penaltyConfirmationOverlay: some View {
+        ZStack {
+            // Fondo semi-transparente
+            Color.black.opacity(0.75)
+                .ignoresSafeArea()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            VStack(spacing: 8) {
+                Spacer()
+                
+                // Icono de penalización (más grande)
+                Image("Penalty icon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.white)
+                
+                // Mensaje
+                Text("penaltyConfirmationQuestion".localized)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 12)
+                
+                // Botones YES y NO con estilo Glass (sin outline grueso)
+                HStack(spacing: 12) {
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            showPenaltyConfirmation = false
+                            showPenaltyPicker = true
+                        }
+                    }) {
+                        Text("yesButton".localized)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(width: 65, height: 36)
+                    }
+                    .buttonStyle(GlassButtonStyle(cornerRadius: 18, height: 36))
+                    
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            showPenaltyConfirmation = false
+                        }
+                    }) {
+                        Text("noButton".localized)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(width: 65, height: 36)
+                    }
+                    .buttonStyle(GlassButtonStyle(cornerRadius: 18, height: 36))
+                }
+                .padding(.top, 4)
+                
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .allowsHitTesting(true)
+    }
+    
+    private var penaltyPickerView: some View {
+        ZStack {
+            // Background
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.09, green: 0.145, blue: 0.229),
+                    Color(red: 0.118, green: 0.227, blue: 0.441),
+                    Color(red: 0.09, green: 0.145, blue: 0.229)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Espacio superior mínimo
+                Spacer()
+                    .frame(height: 4)
+                
+                // Título compacto
+                Text("penaltyMinutes".localized)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.gray)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
+                    .padding(.top, 8)
+                
+                // Stepper para seleccionar minutos (estilo WatchOS nativo)
+                HStack(spacing: 8) {
+                    // Botón menos (verde como en WatchOS, tamaño reducido)
+                    Button(action: {
+                        // Por ahora, permitir bajar sin restricciones para probar
+                        selectedPenaltyMinutes -= 1
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundColor(.green)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    // Número de minutos con "min" al lado (font reducido 1 punto)
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text("\(selectedPenaltyMinutes)")
+                            .font(.system(size: 35, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("minutesLabel".localized)
+                            .font(.system(size: 35, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                    
+                    // Botón más (verde como en WatchOS, tamaño reducido)
+                    Button(action: {
+                        selectedPenaltyMinutes += 1
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundColor(.green)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.vertical, 12)
+                
+                Spacer()
+                    .frame(minHeight: 8)
+                
+                // Botón Done con estilo Glass (estandarizado según AppStyles)
+                Button(action: {
+                    // Por ahora, aplicar sin validación para probar
+                    applyPenalty(minutes: selectedPenaltyMinutes)
+                    selectedPenaltyMinutes = selectedPenaltyMinutes >= 0 ? 1 : 0 // Resetear: positivo a 1, negativo a 0
+                    showPenaltyPicker = false
+                }) {
+                    Text("doneButton".localized)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                }
+                .buttonStyle(GlassButtonStyle())
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 30)
+                .padding(.bottom, 8)
             }
         }
     }

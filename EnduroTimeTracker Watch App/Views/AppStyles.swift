@@ -7,6 +7,18 @@
 
 import SwiftUI
 
+// MARK: - Button Heights
+extension CGFloat {
+    static let standardButtonHeight: CGFloat = 75
+    static let compactButtonHeight: CGFloat = 50 // Para botones como Start, Done, Dismiss
+}
+
+// MARK: - Spacing
+extension CGFloat {
+    static let standardButtonSpacing: CGFloat = 12 // Espaciado estándar entre botones
+    static let emphasizedButtonSpacing: CGFloat = 36 // Espaciado enfatizado (triplicado) para botones especiales como "Agregar punto de control" o "Dismiss/Done"
+}
+
 // MARK: - Background Gradient
 extension View {
     func appBackground() -> some View {
@@ -28,7 +40,7 @@ extension View {
 // MARK: - Glass Button Style
 struct GlassButtonStyle: ButtonStyle {
     var isEnabled: Bool = true
-    var cornerRadius: CGFloat = 32
+    var cornerRadius: CGFloat = 22
     var height: CGFloat? = nil // Opcional: altura fija para las burbujas
     var useGreenBorder: Bool = false // Solo para TimeTableView cuando hay valor seleccionado
     
@@ -43,13 +55,14 @@ struct GlassButtonStyle: ButtonStyle {
                     .overlay(
                         // Las burbujas inactivas son más claras (mayor opacidad)
                         RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(Color.gray.opacity(isEnabled ? 0.25 : 0.35))
+                            .fill(Color.gray.opacity(isEnabled ? 0.15 : 0.25))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius)
                             .stroke(
                                 // Borde verde solo si useGreenBorder es true Y está habilitado (solo en TimeTableView)
-                                (useGreenBorder && isEnabled) ? Color.green.opacity(0.6) : Color.white.opacity(0.4),
+                                // Opacidad del borde: 0.45 para activos, 0.3 para inactivos
+                                (useGreenBorder && isEnabled) ? Color.green.opacity(0.6) : Color.white.opacity(isEnabled ? 0.45 : 0.3),
                                 lineWidth: 1
                             )
                     )

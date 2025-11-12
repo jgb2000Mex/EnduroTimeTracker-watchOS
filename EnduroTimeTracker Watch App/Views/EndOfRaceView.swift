@@ -12,9 +12,9 @@ struct EndOfRaceView: View {
     
     var body: some View {
         VStack(spacing: 4) {
-            // Spacer para dejar espacio para el header del sistema
+            // Spacer para dejar espacio para el header del sistema y separar del reloj
             Spacer()
-                .frame(height: 2)
+                .frame(height: 20)
             
             Spacer()
                 .frame(maxHeight: .infinity)
@@ -27,24 +27,30 @@ struct EndOfRaceView: View {
                 .padding(.bottom, 1)
             
             // Mensaje End of Race
-            Text("End of Race")
+            Text("endOfRace".localized)
                 .font(.system(size: 25, weight: .bold, design: .rounded))
                 .foregroundColor(.green)
                 .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+                .lineLimit(2)
             
             Spacer()
                 .frame(maxHeight: .infinity)
             
-            // Botón Dismiss con estilo Glass
+            // Espaciado antes del botón Dismiss (reducido)
+            Spacer()
+                .frame(height: 6)
+            
+            // Botón Dismiss con estilo Glass estandarizado
             Button(action: onDismiss) {
-                Text("Dismiss")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                Text("dismissButton".localized)
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
                     .foregroundColor(.white)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
             }
-            .buttonStyle(GlassButtonStyle())
+            .buttonStyle(GlassButtonStyle(height: .compactButtonHeight))
             .padding(.horizontal, 30)
             .padding(.bottom, 8)
         }

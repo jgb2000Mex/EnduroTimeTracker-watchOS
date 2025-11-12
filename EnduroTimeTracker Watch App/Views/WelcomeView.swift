@@ -28,19 +28,21 @@ struct WelcomeView: View {
             
             // Texto de bienvenida con tamaños reducidos
             VStack(spacing: 2) {
-                Text("Welcome to")
+                Text("welcomeTo".localized)
                     .font(.headline)
                     .foregroundColor(.white)
+                    .minimumScaleFactor(0.9)
+                    .lineLimit(1)
                 
                 HStack(spacing: 0) {
-                    Text("Enduro Time")
+                    Text("enduroTime".localized)
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.yellow)
                         .minimumScaleFactor(0.9)
                         .lineLimit(1)
                     
-                    Text(" Tracker")
+                    Text(" \("tracker".localized)")
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -54,15 +56,21 @@ struct WelcomeView: View {
                 .frame(maxHeight: .infinity)
             
             // Botón Start con estilo Glass
+            // PATRÓN CORRECTO: frame dentro, padding fuera (como Button 10 en TestButtonView)
             Button(action: onStart) {
-                Text("Start")
+                Text("startButton".localized)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .padding(.horizontal, 60)
             }
             .buttonStyle(GlassButtonStyle())
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 30)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)

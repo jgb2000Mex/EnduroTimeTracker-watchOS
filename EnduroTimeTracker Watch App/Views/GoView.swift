@@ -28,7 +28,7 @@ struct GoView: View {
                 .padding(.bottom, 1)
             
             // GO! grande
-            Text("GO!")
+            Text("goText".localized)
                 .font(.system(size: 70, weight: .bold, design: .rounded))
                 .foregroundColor(.green)
             
