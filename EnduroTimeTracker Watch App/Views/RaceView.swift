@@ -16,6 +16,8 @@ struct RaceView: View {
     @State private var showGoScreen = false
     @State private var timer: Timer?
     @Environment(\.dismiss) var dismiss
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @State private var isCountdownDisplayReduced = false
     
     // HealthKit Manager
     @StateObject private var healthKitManager = HealthKitManager.shared
@@ -48,6 +50,8 @@ struct RaceView: View {
     // Timestamp para rastrear cuándo se entró a la vista
     // Esto previene que GO! aparezca durante los primeros 3 segundos
     @State private var viewAppearedAt: Date?
+    @State private var hasScheduledWorkoutPrepare = false
+    @State private var isStartingWorkout = false
     
     var onBack: () -> Void
     var onRaceEnd: (() -> Void)? = nil // Callback opcional para cuando termina la carrera
@@ -105,7 +109,7 @@ struct RaceView: View {
                         timeControlName: getCurrentTimeControlName(),
                         onContinue: {
                             showGoScreen = false
-                            moveToNextTimeControl()
+                            continueAfterGoScreen()
                         }
                     )
                 } else {
@@ -125,11 +129,13 @@ struct RaceView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 8)
                             
-                            // Countdown grande
-                            Text(formatCountdown(timeRemaining))
+                            // Countdown grande (formato reducido con muñeca abajo)
+                            Text(formatCountdown(timeRemaining, includeSeconds: !isCountdownDisplayReduced))
                                 .font(.system(size: 55, weight: .bold, design: .rounded))
                                 .foregroundColor(.orange)
                                 .monospacedDigit()
+                                .minimumScaleFactor(0.5)
+                                .lineLimit(1)
                             
                             Spacer()
                                 .frame(height: 8)
@@ -186,6 +192,7 @@ struct RaceView: View {
         .onAppear {
             showGoScreen = false
             viewAppearedAt = Date()
+            isCountdownDisplayReduced = isLuminanceReduced
             
             if getCurrentTimeControl() != nil {
                 resetAlerts()
@@ -195,7 +202,9 @@ struct RaceView: View {
             startTimer()
             
             if !workoutStarted {
-                extendedRuntimeManager.beginRaceCountdownSession()
+                extendedRuntimeManager.maintainRaceCountdownSession()
+                healthKitManager.ensureLocationAuthorizationIfNeeded()
+                scheduleWorkoutPrepareIfNeeded()
             }
             
             if !hasShownInitialScreenLockOverlay {
@@ -264,11 +273,40 @@ struct RaceView: View {
         }
         .onDisappear {
             timer?.invalidate()
+            healthKitManager.discardPreparedWorkoutSession()
             extendedRuntimeManager.endRaceCountdownSession()
         }
-        .onChange(of: workoutStarted) { _, started in
-            if started {
+        .onChange(of: isLuminanceReduced) { _, reduced in
+            isCountdownDisplayReduced = reduced
+            if !reduced {
+                updateTimeRemaining()
+            }
+        }
+        .onChange(of: healthKitManager.isWorkoutSessionRunning) { _, running in
+            if running {
                 extendedRuntimeManager.endRaceCountdownSession()
+            }
+        }
+    }
+    
+    private func secondsUntilTC1() -> TimeInterval? {
+        let tc1Index = getFirstNonParcFermeIndex()
+        guard tc1Index >= 0 else { return nil }
+        let allControls = getAllControls()
+        guard tc1Index < allControls.count else { return nil }
+        return allControls[tc1Index].time.timeIntervalSince(Date())
+    }
+    
+    private func scheduleWorkoutPrepareIfNeeded() {
+        guard !workoutStarted, getFirstNonParcFermeIndex() >= 0 else { return }
+        guard !hasScheduledWorkoutPrepare else { return }
+        
+        hasScheduledWorkoutPrepare = true
+        extendedRuntimeManager.maintainRaceCountdownSession()
+        Task {
+            await healthKitManager.prepareWorkoutSession()
+            if !healthKitManager.isWorkoutSessionPrepared {
+                await MainActor.run { hasScheduledWorkoutPrepare = false }
             }
         }
     }
@@ -505,11 +543,36 @@ struct RaceView: View {
         return formatter.string(from: date)
     }
     
-    private func formatCountdown(_ seconds: TimeInterval) -> String {
+    private func formatCountdown(_ seconds: TimeInterval, includeSeconds: Bool) -> String {
         let totalSeconds = Int(max(0, seconds))
-        let minutes = totalSeconds / 60
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
         let secs = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, secs)
+        
+        if includeSeconds {
+            if hours > 0 {
+                return String(format: "%d:%02d:%02d", hours, minutes, secs)
+            }
+            return String(format: "%02d:%02d", minutes, secs)
+        }
+        
+        // Pantalla atenuada: horas:minutos, "MM min", o "< 1 min"
+        if hours > 0 {
+            return String(format: "%d:%02d", hours, minutes)
+        }
+        if minutes > 0 {
+            return String(format: "%02d %@", minutes, "minutesLabel".localized)
+        }
+        if totalSeconds > 0 {
+            return "lessThanOneMinute".localized
+        }
+        return String(format: "%02d:%02d", 0, 0)
+    }
+    
+    private func shouldUpdateCountdownDisplay(from oldValue: TimeInterval, to newValue: TimeInterval) -> Bool {
+        if !isCountdownDisplayReduced { return true }
+        if Int(newValue) <= 0 { return true }
+        return formatCountdown(oldValue, includeSeconds: false) != formatCountdown(newValue, includeSeconds: false)
     }
     
     private func updateTimeRemaining() {
@@ -530,23 +593,62 @@ struct RaceView: View {
         
         let nowComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now)
         guard let normalizedNow = calendar.date(from: nowComponents) else {
-            timeRemaining = max(0, control.time.timeIntervalSince(now))
-            checkGoCondition()
-            checkAlerts()
+            let newRemaining = max(0, control.time.timeIntervalSince(now))
+            if shouldUpdateCountdownDisplay(from: timeRemaining, to: newRemaining) {
+                timeRemaining = newRemaining
+            }
+            checkGoCondition(for: newRemaining)
+            checkAlerts(for: newRemaining)
             return
         }
         
         let controlComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: control.time)
         guard let normalizedControlTime = calendar.date(from: controlComponents) else {
-            timeRemaining = max(0, control.time.timeIntervalSince(normalizedNow))
-            checkGoCondition()
-            checkAlerts()
+            let newRemaining = max(0, control.time.timeIntervalSince(normalizedNow))
+            if shouldUpdateCountdownDisplay(from: timeRemaining, to: newRemaining) {
+                timeRemaining = newRemaining
+            }
+            checkGoCondition(for: newRemaining)
+            checkAlerts(for: newRemaining)
             return
         }
         
-        timeRemaining = max(0, normalizedControlTime.timeIntervalSince(normalizedNow))
-        checkGoCondition()
-        checkAlerts()
+        let newRemaining = max(0, normalizedControlTime.timeIntervalSince(normalizedNow))
+        if shouldUpdateCountdownDisplay(from: timeRemaining, to: newRemaining) {
+            timeRemaining = newRemaining
+        }
+        checkGoCondition(for: newRemaining)
+        checkAlerts(for: newRemaining)
+        prepareWorkoutIfApproachingTC1(remaining: newRemaining)
+    }
+    
+    private func continueAfterGoScreen() {
+        let nextIndex = currentTimeControlIndex + 1
+        let tc1Index = getFirstNonParcFermeIndex()
+        
+        if nextIndex == tc1Index && !workoutStarted {
+            extendedRuntimeManager.maintainRaceCountdownSession()
+            let allControls = getAllControls()
+            if nextIndex < allControls.count {
+                let secondsUntilTC1 = allControls[nextIndex].time.timeIntervalSince(Date())
+                if secondsUntilTC1 <= 90 {
+                    Task {
+                        await healthKitManager.prepareWorkoutSession()
+                        await MainActor.run {
+                            moveToNextTimeControl()
+                        }
+                    }
+                    return
+                }
+            }
+        }
+        moveToNextTimeControl()
+    }
+    
+    private func prepareWorkoutIfApproachingTC1(remaining: TimeInterval) {
+        guard !workoutStarted else { return }
+        guard let secondsUntilTC1 = secondsUntilTC1(), secondsUntilTC1 > 0, secondsUntilTC1 <= 90 else { return }
+        scheduleWorkoutPrepareIfNeeded()
     }
     
     private func getCurrentTimeControlId() -> UUID? {
@@ -571,14 +673,14 @@ struct RaceView: View {
         return nil
     }
     
-    private func checkAlerts() {
+    private func checkAlerts(for remaining: TimeInterval) {
         guard let appearedAt = viewAppearedAt,
               Date().timeIntervalSince(appearedAt) >= 5.0,
-              timeRemaining >= -5.0 else {
+              remaining >= -5.0 else {
             return
         }
         
-        let totalSeconds = Int(timeRemaining)
+        let totalSeconds = Int(remaining)
         
         if totalSeconds == 120 && !alert2MinutesTriggered {
             playNotificationAlert()
@@ -627,7 +729,7 @@ struct RaceView: View {
         }
     }
     
-    private func checkGoCondition() {
+    private func checkGoCondition(for remaining: TimeInterval) {
         guard let currentControl = getCurrentTimeControl() else {
             showGoScreen = false
             timer?.invalidate()
@@ -640,7 +742,7 @@ struct RaceView: View {
             return
         }
         
-        guard timeRemaining <= 0.5 && !showGoScreen else { return }
+        guard remaining <= 0.5 && !showGoScreen else { return }
         
         let allControls = getAllControls()
         let isLastControl = currentTimeControlIndex >= allControls.count - 1
@@ -762,6 +864,7 @@ struct RaceView: View {
     
     private func startHealthKitWorkout() {
         guard !workoutStarted,
+              !isStartingWorkout,
               let currentControl = getCurrentTimeControl(),
               currentControl.name != "Parc Ferme" else {
             return
@@ -778,15 +881,23 @@ struct RaceView: View {
         let now = Date()
         let actualStartTime = currentControl.time > now ? now : currentControl.time
         
+        isStartingWorkout = true
+        extendedRuntimeManager.maintainRaceCountdownSession()
+        print("🏁 [Race] Arrancando workout en TC1")
+        
         Task {
+            defer { isStartingWorkout = false }
             do {
-                try await healthKitManager.startWorkout(startTime: actualStartTime)
-                await MainActor.run {
-                    workoutStarted = true
-                    extendedRuntimeManager.endRaceCountdownSession()
+                if !healthKitManager.isWorkoutSessionPrepared {
+                    extendedRuntimeManager.maintainRaceCountdownSession()
+                    await healthKitManager.prepareWorkoutSession()
                 }
+                extendedRuntimeManager.maintainRaceCountdownSession()
+                try await healthKitManager.startWorkout(startTime: actualStartTime)
+                workoutStarted = true
             } catch {
                 print("Error iniciando workout: \(error.localizedDescription)")
+                extendedRuntimeManager.maintainRaceCountdownSession()
             }
         }
     }

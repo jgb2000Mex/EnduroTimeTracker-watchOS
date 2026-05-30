@@ -331,6 +331,12 @@ class LocalizationManager {
             .french: "",
             .german: ""
         ],
+        "lessThanOneMinute": [
+            .english: "< 1 min",
+            .spanish: "< 1 min",
+            .french: "",
+            .german: ""
+        ],
         "goText": [
             .english: "GO!",
             .spanish: "GO!",

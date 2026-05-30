@@ -32,10 +32,17 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         startIfNeeded()
     }
     
-    /// Finaliza la sesión extendida al iniciar el workout o al salir de RaceView.
+    /// Finaliza la sesión extendida cuando el workout ya está en `.running`, o al salir de RaceView.
     func endRaceCountdownSession() {
         shouldMaintainSession = false
         stop()
+    }
+    
+    /// Mantiene o reinicia la sesión extendida durante el handoff pre-workout / TC1.
+    func maintainRaceCountdownSession() {
+        guard !configurationUnavailable else { return }
+        shouldMaintainSession = true
+        startIfNeeded()
     }
     
     private func startIfNeeded() {
@@ -52,6 +59,7 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         }
         
         session?.start()
+        print("🟢 [ExtendedRuntime] Sesión solicitada (state: \(session?.state.rawValue ?? -1))")
     }
     
     private func stop() {
@@ -63,6 +71,7 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         switch session.state {
         case .running, .scheduled:
             session.invalidate()
+            print("🔴 [ExtendedRuntime] Sesión terminada")
         default:
             self.session = nil
             isActive = false
@@ -122,6 +131,13 @@ extension ExtendedRuntimeManager: WKExtendedRuntimeSessionDelegate {
                     return
                 }
                 print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue)): \(error.localizedDescription)")
+            } else {
+                print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue))")
+            }
+            
+            if shouldMaintainSession, !configurationUnavailable {
+                print("🔄 [ExtendedRuntime] Reiniciando tras invalidación (handoff TC1)")
+                startIfNeeded()
             }
         }
     }
