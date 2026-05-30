@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support - Enduro Time Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #0e2449 0%, #1e3a6f 50%, #0e2449 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #0e2449 0%, #1e3a6f 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        section {
+            margin-bottom: 40px;
+        }
+        
+        h2 {
+            color: #0e2449;
+            font-size: 1.8em;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #f97a0d;
+        }
+        
+        h3 {
+            color: #1e3a6f;
+            font-size: 1.3em;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            font-size: 1.05em;
+            line-height: 1.8;
+        }
+        
+        ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 10px;
+            line-height: 1.7;
+        }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .feature-item {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #f97a0d;
+        }
+        
+        .feature-item h4 {
+            color: #0e2449;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        
+        .contact-box {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 25px;
+            border-radius: 8px;
+            border: 2px solid #f97a0d;
+            margin-top: 20px;
+        }
+        
+        .contact-box h3 {
+            margin-top: 0;
+            color: #0e2449;
+        }
+        
+        .contact-box a {
+            color: #1e3a6f;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .contact-box a:hover {
+            color: #f97a0d;
+            text-decoration: underline;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        .warning-box strong {
+            color: #856404;
+        }
+        
+        footer {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            h2 {
+                font-size: 1.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⏱️ Enduro Time Tracker</h1>
+            <p>Your trusted companion for enduro racing</p>
+        </header>
+        
+        <div class="content">
+            <section>
+                <h2>Welcome</h2>
+                <p>
+                    Thank you for using <strong>Enduro Time Tracker</strong>, the app designed specifically 
+                    for Apple Watch that helps you manage and track times during your enduro races.
+                </p>
+                <p>
+                    Our app allows you to configure time controls, manage penalties, 
+                    and maintain an accurate record of your progress during the race, all from your wrist.
+                </p>
+            </section>
+            
+            <section>
+                <h2>Key Features</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <h4>📋 Time Configuration</h4>
+                        <p>Configure multiple time controls and manage Parc Fermé with ease.</p>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <h4>⏰ Smart Timer</h4>
+                        <p>Real-time countdown timer with automatic alerts at 2 minutes, 1 minute, and exact time.</p>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <h4>⚠️ Penalty System</h4>
+                        <p>Record and apply penalties that automatically adjust remaining times.</p>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <h4>🔒 Screen Lock</h4>
+                        <p>Protect your timer from accidental touches during the race.</p>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <h4>🌍 Multi-language</h4>
+                        <p>Support for English, Spanish, French, and German.</p>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <h4>💪 HealthKit Integration</h4>
+                        <p>Automatically record your races as workouts with full GPS tracking.</p>
+                    </div>
+                </div>
+            </section>
+            
+            <section>
+                <h2>Basic Usage</h2>
+                <h3>Setting Up a Race</h3>
+                <ol>
+                    <li>Open the app on your Apple Watch</li>
+                    <li>Select "Timetable" from the main menu</li>
+                    <li>Configure Parc Fermé if needed</li>
+                    <li>Add your time controls with their scheduled times</li>
+                    <li>Press "Done" when finished</li>
+                </ol>
+                
+                <h3>During the Race</h3>
+                <ol>
+                    <li>Select "Race Timer" from the main menu</li>
+                    <li>The app will display the time remaining until the next control</li>
+                    <li>You'll receive automatic alerts at 2 minutes, 1 minute, and exact time</li>
+                    <li>Use the lock button to prevent accidental touches</li>
+                    <li>If you need to apply a penalty, use the penalty button</li>
+                </ol>
+                
+                <div class="warning-box">
+                    <strong>Important note:</strong> Make sure you have HealthKit and Location permissions 
+                    configured if you want to record your races as workouts with GPS.
+                </div>
+            </section>
+            
+            <section>
+                <h2>Support & Contact</h2>
+                <p>
+                    If you have questions, encounter any issues, or have suggestions to improve the app, 
+                    we're here to help.
+                </p>
+                
+                <div class="contact-box">
+                    <h3>Need Help?</h3>
+                    <p>
+                        Please contact us through:
+                    </p>
+                    <ul>
+                        <li><strong>Email:</strong> <a href="mailto:support@endurotimetracker.com">support@endurotimetracker.com</a></li>
+                        <li><strong>GitHub Issues:</strong> If you find a bug, you can report it on our GitHub repository</li>
+                    </ul>
+                    <p style="margin-top: 15px;">
+                        <strong>Please include in your message:</strong>
+                    </p>
+                    <ul>
+                        <li>Detailed description of the problem or question</li>
+                        <li>watchOS version you're using</li>
+                        <li>Your Apple Watch model</li>
+                        <li>Steps to reproduce the problem (if applicable)</li>
+                    </ul>
+                </div>
+            </section>
+            
+            <section>
+                <h2>System Requirements</h2>
+                <ul>
+                    <li>Apple Watch with watchOS 10.0 or later</li>
+                    <li>Paired iPhone with iOS 17.0 or later</li>
+                    <li>HealthKit and Location permissions (optional, for GPS tracking)</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>Privacy</h2>
+                <p>
+                    <strong>Enduro Time Tracker</strong> respects your privacy. The app:
+                </p>
+                <ul>
+                    <li>Does not collect personal data</li>
+                    <li>HealthKit data is stored locally on your device</li>
+                    <li>Does not send information to external servers</li>
+                    <li>All data remains on your Apple Watch and iPhone</li>
+                </ul>
+            </section>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 Enduro Time Tracker. All rights reserved.</p>
+            <p style="margin-top: 10px; font-size: 0.85em;">
+                Developed with ❤️ for the enduro community
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
+

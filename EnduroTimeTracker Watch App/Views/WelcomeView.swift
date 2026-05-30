@@ -29,27 +29,21 @@ struct WelcomeView: View {
             // Texto de bienvenida con tamaños reducidos
             VStack(spacing: 2) {
                 Text("welcomeTo".localized)
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .minimumScaleFactor(0.9)
+                    .minimumScaleFactor(0.7)
                     .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
                 
-                HStack(spacing: 0) {
-                    Text("enduroTime".localized)
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.yellow)
-                        .minimumScaleFactor(0.9)
-                        .lineLimit(1)
-                    
-                    Text(" \("tracker".localized)")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .minimumScaleFactor(0.9)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 4)
+                
+                Text("\("enduroTime".localized) \("tracker".localized)")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.yellow)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
             }
             
             Spacer()

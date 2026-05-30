@@ -320,7 +320,7 @@ class LocalizationManager {
             .german: ""
         ],
         "penaltyMinutes": [
-            .english: "PENALTY MINUTES",
+            .english: "Penalty Minutes",
             .spanish: "Minutos de Penalización",
             .french: "",
             .german: ""

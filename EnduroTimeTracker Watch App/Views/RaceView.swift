@@ -1012,10 +1012,11 @@ struct RaceView: View {
                 
                 // Título compacto
                 Text("penaltyMinutes".localized)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(.gray)
                     .minimumScaleFactor(0.7)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
                 
                 // Stepper para seleccionar minutos (estilo WatchOS nativo)
