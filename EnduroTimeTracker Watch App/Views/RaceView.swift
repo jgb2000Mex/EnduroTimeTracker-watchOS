@@ -19,6 +19,7 @@ struct RaceView: View {
     
     // HealthKit Manager
     @StateObject private var healthKitManager = HealthKitManager.shared
+    @StateObject private var extendedRuntimeManager = ExtendedRuntimeManager.shared
     @State private var workoutStarted = false
     
     // Estados para rastrear qué alertas ya se han activado
@@ -193,6 +194,10 @@ struct RaceView: View {
             
             startTimer()
             
+            if !workoutStarted {
+                extendedRuntimeManager.beginRaceCountdownSession()
+            }
+            
             if !hasShownInitialScreenLockOverlay {
                 hasShownInitialScreenLockOverlay = true
                 showInitialScreenLockOverlay = true
@@ -259,6 +264,12 @@ struct RaceView: View {
         }
         .onDisappear {
             timer?.invalidate()
+            extendedRuntimeManager.endRaceCountdownSession()
+        }
+        .onChange(of: workoutStarted) { _, started in
+            if started {
+                extendedRuntimeManager.endRaceCountdownSession()
+            }
         }
     }
     
@@ -772,6 +783,7 @@ struct RaceView: View {
                 try await healthKitManager.startWorkout(startTime: actualStartTime)
                 await MainActor.run {
                     workoutStarted = true
+                    extendedRuntimeManager.endRaceCountdownSession()
                 }
             } catch {
                 print("Error iniciando workout: \(error.localizedDescription)")

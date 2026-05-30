@@ -459,6 +459,7 @@
 				DEVELOPMENT_TEAM = 33MVQ73LT7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnduroTimeTracker-Watch-Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = EnduroTimeTracker;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Access needed to record heart rate, calories, distance and elevation.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Access needed to record heart rate, calories, distance and elevation.";
@@ -498,6 +499,7 @@
 				DEVELOPMENT_TEAM = 33MVQ73LT7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnduroTimeTracker-Watch-Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = EnduroTimeTracker;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Access needed to record heart rate, calories, distance and elevation.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Access needed to record heart rate, calories, distance and elevation.";
