@@ -202,9 +202,8 @@ struct RaceView: View {
             startTimer()
             
             if !workoutStarted {
-                extendedRuntimeManager.maintainRaceCountdownSession()
+                extendedRuntimeManager.beginRaceCountdownSession()
                 healthKitManager.ensureLocationAuthorizationIfNeeded()
-                scheduleWorkoutPrepareIfNeeded()
             }
             
             if !hasShownInitialScreenLockOverlay {
@@ -282,11 +281,6 @@ struct RaceView: View {
                 updateTimeRemaining()
             }
         }
-        .onChange(of: healthKitManager.isWorkoutSessionRunning) { _, running in
-            if running {
-                extendedRuntimeManager.endRaceCountdownSession()
-            }
-        }
     }
     
     private func secondsUntilTC1() -> TimeInterval? {
@@ -297,16 +291,15 @@ struct RaceView: View {
         return allControls[tc1Index].time.timeIntervalSince(Date())
     }
     
-    private func scheduleWorkoutPrepareIfNeeded() {
-        guard !workoutStarted, getFirstNonParcFermeIndex() >= 0 else { return }
-        guard !hasScheduledWorkoutPrepare else { return }
+    private func prepareWorkoutIfApproachingTC1() {
+        guard !workoutStarted, !hasScheduledWorkoutPrepare else { return }
+        guard let secondsUntilTC1 = secondsUntilTC1(), secondsUntilTC1 > 0, secondsUntilTC1 <= 90 else { return }
         
         hasScheduledWorkoutPrepare = true
-        extendedRuntimeManager.maintainRaceCountdownSession()
         Task {
             await healthKitManager.prepareWorkoutSession()
             if !healthKitManager.isWorkoutSessionPrepared {
-                await MainActor.run { hasScheduledWorkoutPrepare = false }
+                hasScheduledWorkoutPrepare = false
             }
         }
     }
@@ -619,36 +612,11 @@ struct RaceView: View {
         }
         checkGoCondition(for: newRemaining)
         checkAlerts(for: newRemaining)
-        prepareWorkoutIfApproachingTC1(remaining: newRemaining)
+        prepareWorkoutIfApproachingTC1()
     }
     
     private func continueAfterGoScreen() {
-        let nextIndex = currentTimeControlIndex + 1
-        let tc1Index = getFirstNonParcFermeIndex()
-        
-        if nextIndex == tc1Index && !workoutStarted {
-            extendedRuntimeManager.maintainRaceCountdownSession()
-            let allControls = getAllControls()
-            if nextIndex < allControls.count {
-                let secondsUntilTC1 = allControls[nextIndex].time.timeIntervalSince(Date())
-                if secondsUntilTC1 <= 90 {
-                    Task {
-                        await healthKitManager.prepareWorkoutSession()
-                        await MainActor.run {
-                            moveToNextTimeControl()
-                        }
-                    }
-                    return
-                }
-            }
-        }
         moveToNextTimeControl()
-    }
-    
-    private func prepareWorkoutIfApproachingTC1(remaining: TimeInterval) {
-        guard !workoutStarted else { return }
-        guard let secondsUntilTC1 = secondsUntilTC1(), secondsUntilTC1 > 0, secondsUntilTC1 <= 90 else { return }
-        scheduleWorkoutPrepareIfNeeded()
     }
     
     private func getCurrentTimeControlId() -> UUID? {
@@ -882,22 +850,20 @@ struct RaceView: View {
         let actualStartTime = currentControl.time > now ? now : currentControl.time
         
         isStartingWorkout = true
-        extendedRuntimeManager.maintainRaceCountdownSession()
-        print("🏁 [Race] Arrancando workout en TC1")
+        extendedRuntimeManager.beginRaceCountdownSession()
         
         Task {
             defer { isStartingWorkout = false }
             do {
                 if !healthKitManager.isWorkoutSessionPrepared {
-                    extendedRuntimeManager.maintainRaceCountdownSession()
                     await healthKitManager.prepareWorkoutSession()
                 }
-                extendedRuntimeManager.maintainRaceCountdownSession()
                 try await healthKitManager.startWorkout(startTime: actualStartTime)
                 workoutStarted = true
+                extendedRuntimeManager.handoffToWorkoutSession()
             } catch {
                 print("Error iniciando workout: \(error.localizedDescription)")
-                extendedRuntimeManager.maintainRaceCountdownSession()
+                extendedRuntimeManager.beginRaceCountdownSession()
             }
         }
     }

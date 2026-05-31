@@ -25,24 +25,24 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         super.init()
     }
     
-    /// Inicia la sesión extendida para el countdown pre-workout (Parc Fermé / espera a TC1).
+    /// Inicia o mantiene la sesión extendida durante Parc Fermé → TC1.
     func beginRaceCountdownSession() {
         guard !configurationUnavailable else { return }
         shouldMaintainSession = true
         startIfNeeded()
     }
     
-    /// Finaliza la sesión extendida cuando el workout ya está en `.running`, o al salir de RaceView.
-    func endRaceCountdownSession() {
+    /// Handoff a HKWorkoutSession: solo termina extended runtime cuando el workout está completamente activo.
+    func handoffToWorkoutSession() {
+        guard shouldMaintainSession || isActive else { return }
         shouldMaintainSession = false
-        stop()
+        stop(reason: "handoff a HKWorkoutSession")
     }
     
-    /// Mantiene o reinicia la sesión extendida durante el handoff pre-workout / TC1.
-    func maintainRaceCountdownSession() {
-        guard !configurationUnavailable else { return }
-        shouldMaintainSession = true
-        startIfNeeded()
+    /// Finaliza la sesión extendida al salir de RaceView o si falla el inicio del workout.
+    func endRaceCountdownSession() {
+        shouldMaintainSession = false
+        stop(reason: "fin de countdown / salida de carrera")
     }
     
     private func startIfNeeded() {
@@ -59,10 +59,12 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         }
         
         session?.start()
-        print("🟢 [ExtendedRuntime] Sesión solicitada (state: \(session?.state.rawValue ?? -1))")
+        #if DEBUG
+        print("🟢 [ExtendedRuntime] Sesión solicitada")
+        #endif
     }
     
-    private func stop() {
+    private func stop(reason: String) {
         guard let session else {
             isActive = false
             return
@@ -71,7 +73,7 @@ final class ExtendedRuntimeManager: NSObject, ObservableObject {
         switch session.state {
         case .running, .scheduled:
             session.invalidate()
-            print("🔴 [ExtendedRuntime] Sesión terminada")
+            print("🔴 [ExtendedRuntime] Sesión terminada (\(reason))")
         default:
             self.session = nil
             isActive = false
@@ -125,18 +127,22 @@ extension ExtendedRuntimeManager: WKExtendedRuntimeSessionDelegate {
             }
             isActive = false
             
-            if let error {
-                if isConfigurationError(error) {
-                    handleConfigurationError(error)
-                    return
-                }
-                print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue)): \(error.localizedDescription)")
-            } else {
-                print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue))")
+            if let error, isConfigurationError(error) {
+                handleConfigurationError(error)
+                return
             }
             
+            #if DEBUG
+            if shouldMaintainSession {
+                if let error {
+                    print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue)): \(error.localizedDescription)")
+                } else {
+                    print("⚠️ [ExtendedRuntime] Sesión invalidada (\(reason.rawValue))")
+                }
+            }
+            #endif
+            
             if shouldMaintainSession, !configurationUnavailable {
-                print("🔄 [ExtendedRuntime] Reiniciando tras invalidación (handoff TC1)")
                 startIfNeeded()
             }
         }

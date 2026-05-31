@@ -33,7 +33,6 @@ class HealthKitManager: NSObject, ObservableObject {
     private var workoutBuilder: HKLiveWorkoutBuilder?
     private var locationManager: CLLocationManager?
     private var authorizationLocationManager: CLLocationManager?
-    private var routeBuilder: HKWorkoutRouteBuilder?
     private var preparedSession: HKWorkoutSession?
     private var preparedBuilder: HKLiveWorkoutBuilder?
     private var isPreparingWorkout = false
@@ -149,14 +148,35 @@ class HealthKitManager: NSObject, ObservableObject {
         
         do {
             try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
-            await MainActor.run {
-                isAuthorized = true
-            }
+            isAuthorized = true
             return true
         } catch {
             print("Error solicitando autorización de HealthKit: \(error.localizedDescription)")
             return false
         }
+    }
+    
+    // MARK: - Workout Data Source
+    
+    // MARK: - Workout Configuration
+    
+    private func makeWorkoutConfiguration() -> HKWorkoutConfiguration {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .cycling
+        configuration.locationType = .outdoor
+        return configuration
+    }
+    
+    private func configureWorkoutDataSource(for configuration: HKWorkoutConfiguration) -> HKLiveWorkoutDataSource {
+        let dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        // Evitar distancia del sensor del reloj; usamos distancia GPS calculada.
+        if let distanceCycling = HKQuantityType.quantityType(forIdentifier: .distanceCycling) {
+            dataSource.disableCollection(for: distanceCycling)
+        }
+        if let distanceWalkingRunning = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            dataSource.disableCollection(for: distanceWalkingRunning)
+        }
+        return dataSource
     }
     
     // MARK: - Workout Session
@@ -169,14 +189,12 @@ class HealthKitManager: NSObject, ObservableObject {
         isPreparingWorkout = true
         defer { isPreparingWorkout = false }
         
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
-        configuration.locationType = .outdoor
+        let configuration = makeWorkoutConfiguration()
         
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             let builder = session.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            builder.dataSource = configureWorkoutDataSource(for: configuration)
             session.delegate = self
             builder.delegate = self
             
@@ -185,7 +203,9 @@ class HealthKitManager: NSObject, ObservableObject {
             preparedSession = session
             preparedBuilder = builder
             isWorkoutSessionPrepared = true
+            #if DEBUG
             print("✅ [Workout] Sesión preparada (lista para TC1)")
+            #endif
         } catch {
             failPrepareContinuation(with: error)
             print("⚠️ [Workout] Error preparando sesión: \(error.localizedDescription)")
@@ -263,12 +283,14 @@ class HealthKitManager: NSObject, ObservableObject {
         let actualStartTime = startTime > now ? now : startTime
         
         if startTime > now {
+            #if DEBUG
             print("⚠️ [Workout] startTime era futuro, ajustado a tiempo actual")
+            #endif
         }
         
+        #if DEBUG
         print("🚀 [Workout] Iniciando workout con startTime: \(actualStartTime)")
-        
-        // Inicializar variables de métricas GPS
+        #endif
         allLocations = []
         totalDistance = 0.0
         elevationGain = 0.0
@@ -285,13 +307,11 @@ class HealthKitManager: NSObject, ObservableObject {
             isWorkoutSessionPrepared = false
             HealthKitDiagnostics.log("✅ [Workout] Usando sesión preparada")
         } else {
-            let configuration = HKWorkoutConfiguration()
-            configuration.activityType = .cycling
-            configuration.locationType = .outdoor
+            let configuration = makeWorkoutConfiguration()
             
             session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             builder = session.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            builder.dataSource = configureWorkoutDataSource(for: configuration)
             session.delegate = self
             builder.delegate = self
             
@@ -299,37 +319,26 @@ class HealthKitManager: NSObject, ObservableObject {
         }
         
         session.startActivity(with: actualStartTime)
-        print("✅ [Workout] startActivity enviado; esperando .running...")
-        
         try await waitForRunningState(session: session)
-        print("✅ [Workout] Sesión en .running")
         
-        // Iniciar colección de datos con el tiempo ajustado
+        workoutSession = session
+        workoutBuilder = builder
+        workoutStartTime = actualStartTime
+        
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             builder.beginCollection(withStart: actualStartTime) { success, error in
                 if let error = error {
-                    print("❌ [Workout] Error iniciando colección de datos: \(error.localizedDescription)")
+                    print("❌ [Workout] Error iniciando colección: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
-                } else if success {
-                    print("✅ [Workout] Colección de datos iniciada exitosamente")
-                    continuation.resume()
                 } else {
-                    print("⚠️ [Workout] beginCollection completó pero success = false")
-                    continuation.resume() // Continuar aunque haya advertencia
+                    continuation.resume()
                 }
             }
         }
         
-        // Iniciar GPS cuando la sesión de workout esté en ejecución (delegate)
-        
-        // Guardar referencias
-        await MainActor.run {
-            workoutSession = session
-            workoutBuilder = builder
-            workoutStartTime = actualStartTime // Guardar el tiempo ajustado
-            isWorkoutActive = true
-        }
-        print("✅ [Workout] Workout completamente inicializado y activo")
+        startLocationTracking()
+        isWorkoutActive = true
+        print("✅ [Workout] Workout activo (GPS iniciado)")
     }
     
     func endWorkout(endTime: Date) async throws {
@@ -345,232 +354,100 @@ class HealthKitManager: NSObject, ObservableObject {
             throw HealthKitError.noActiveWorkout
         }
         
-        print("🛑 [Workout] Iniciando finalización del workout...")
+        print("🛑 [Workout] Iniciando finalización...")
         
-        // Finalizar GPS tracking PRIMERO (antes de finalizar el workout)
         endLocationTracking()
-        print("🛑 [Workout] GPS tracking finalizado")
-        
-        // Calcular métricas finales desde las ubicaciones GPS ANTES de finalizar la colección
         calculateMetricsFromLocations()
         
-        // Agregar métricas calculadas al workout builder ANTES de finalizar la colección
         guard let workoutStart = workoutStartTime else {
-            print("⚠️ [Workout] No hay workoutStartTime, usando endTime - 1 hora como fallback")
             throw HealthKitError.noActiveWorkout
         }
+        
+        let routeLocations = routeLocationsForSaving(start: workoutStart, end: endTime)
+        print("🛑 [Workout] GPS: \(routeLocations.count) puntos ruta / \(allLocations.count) crudos")
         
         var samplesToAdd: [HKSample] = []
         
-        // Agregar distancia total al workout
-        // Para workouts .cycling, usar distanceCycling es obligatorio
-        if totalDistance > 0 {
-            if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceCycling) {
-                let distanceQuantity = HKQuantity(unit: HKUnit.meter(), doubleValue: totalDistance)
-                let distanceSample = HKQuantitySample(
-                    type: distanceType,
-                    quantity: distanceQuantity,
-                    start: workoutStart,
-                    end: endTime
-                )
-                samplesToAdd.append(distanceSample)
-                print("📊 [Workout] Preparando distancia (Cycling): \(String(format: "%.2f", totalDistance))m (\(String(format: "%.2f", totalDistance / 1000.0))km)")
-            } else {
-                print("⚠️ [Workout] No se pudo crear distanceCycling type")
-            }
+        if totalDistance > 0, let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceCycling) {
+            let distanceQuantity = HKQuantity(unit: HKUnit.meter(), doubleValue: totalDistance)
+            samplesToAdd.append(HKQuantitySample(
+                type: distanceType,
+                quantity: distanceQuantity,
+                start: workoutStart,
+                end: endTime
+            ))
         }
         
-        // NOTA: HealthKit no tiene un tipo de cantidad para elevation gain en metros
-        // La elevation gain se debe agregar como metadata del workout, no como muestra
-        // Sin embargo, para que aparezca en Fitness, necesitamos usar el tipo correcto
-        // Por ahora, no agregamos elevation gain como muestra separada
-        // Se agregará como metadata después de finalizar el workout
-        if elevationGain > 0 {
-            print("📊 [Workout] Elevation gain calculado: \(String(format: "%.2f", elevationGain))m (se agregará como metadata)")
-        }
-        
-        // Calcular y agregar velocidad promedio
         let duration = endTime.timeIntervalSince(workoutStart)
-        if duration > 0 && totalDistance > 0 {
-            let avgSpeedMetersPerSecond = totalDistance / duration
-            if let speedType = HKQuantityType.quantityType(forIdentifier: .walkingSpeed) {
-                let speedQuantity = HKQuantity(unit: HKUnit.meter().unitDivided(by: HKUnit.second()), doubleValue: avgSpeedMetersPerSecond)
-                let speedSample = HKQuantitySample(
-                    type: speedType,
-                    quantity: speedQuantity,
-                    start: workoutStart,
-                    end: endTime
-                )
-                samplesToAdd.append(speedSample)
-                let avgSpeedKmh = avgSpeedMetersPerSecond * 3.6
-                print("📊 [Workout] Preparando velocidad promedio: \(String(format: "%.2f", avgSpeedKmh)) km/h")
-            }
+        if duration > 0, totalDistance > 0,
+           let speedType = HKQuantityType.quantityType(forIdentifier: .walkingSpeed) {
+            let avgSpeed = totalDistance / duration
+            samplesToAdd.append(HKQuantitySample(
+                type: speedType,
+                quantity: HKQuantity(unit: HKUnit.meter().unitDivided(by: HKUnit.second()), doubleValue: avgSpeed),
+                start: workoutStart,
+                end: endTime
+            ))
         }
         
-        // Agregar todas las muestras al builder antes de finalizar la colección
         if !samplesToAdd.isEmpty {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                builder.add(samplesToAdd) { success, error in
-                    if let error = error {
+                builder.add(samplesToAdd) { _, error in
+                    if let error {
                         print("⚠️ [Workout] Error agregando métricas: \(error.localizedDescription)")
-                        continuation.resume() // Continuar aunque haya error
-                    } else if success {
-                        print("✅ [Workout] Todas las métricas agregadas exitosamente")
-                        continuation.resume()
-                    } else {
-                        print("⚠️ [Workout] add completó pero success = false")
-                        continuation.resume()
                     }
+                    continuation.resume()
                 }
             }
         }
         
-        // Finalizar colección de datos ANTES de finalizar la sesión
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.addMetadata([HKMetadataKeyIndoorWorkout: false]) { _, _ in
+                continuation.resume()
+            }
+        }
+        
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             builder.endCollection(withEnd: endTime) { success, error in
-                if let error = error {
-                    print("❌ [Workout] Error finalizando colección: \(error.localizedDescription)")
+                if let error {
                     continuation.resume(throwing: error)
-                } else if success {
-                    print("✅ [Workout] Colección de datos finalizada")
-                    continuation.resume()
                 } else {
-                    print("⚠️ [Workout] endCollection completó pero success = false")
-                    continuation.resume() // Continuar aunque haya advertencia
+                    continuation.resume()
                 }
             }
         }
         
-        // IMPORTANTE: Agregar la distancia directamente al workout usando totalDistance
-        // Esto asegura que aparezca en la app Fitness
-        // El builder calcula automáticamente la distancia desde las muestras agregadas,
-        // pero también podemos asegurarnos agregándola explícitamente
-        
-        // Finalizar el workout builder - esto guarda el workout automáticamente
-        // La distancia debería calcularse automáticamente desde las muestras agregadas
-        print("🛑 [Workout] Finalizando workout builder...")
-        print("🛑 [Workout] Distancia total calculada: \(String(format: "%.2f", totalDistance))m")
         guard let workout = try await builder.finishWorkout() else {
             throw HealthKitError.noActiveWorkout
         }
-        print("✅ [Workout] Workout builder finalizado y guardado automáticamente")
-        print("✅ [Workout] Workout UUID: \(workout.uuid)")
-        print("✅ [Workout] Workout start: \(workout.startDate), end: \(workout.endDate)")
-        
-        // Verificar si la distancia se guardó correctamente
+        #if DEBUG
+        print("✅ [Workout] Guardado \(workout.uuid)")
         if let savedDistance = workout.totalDistance {
-            let distanceInMeters = savedDistance.doubleValue(for: HKUnit.meter())
-            print("✅ [Workout] Distancia guardada en workout: \(String(format: "%.2f", distanceInMeters))m")
+            print("✅ [Workout] Distancia: \(String(format: "%.0f", savedDistance.doubleValue(for: .meter())))m")
+        }
+        #endif
+        
+        if routeLocations.count >= 2 {
+            try await saveWorkoutRoute(for: workout, locations: routeLocations)
+            #if DEBUG
+            await verifySavedWorkoutRoute(for: workout)
+            #endif
         } else {
-            print("⚠️ [Workout] La distancia NO se guardó en el workout - esto puede ser un problema")
+            print("⚠️ [GPS] Insuficientes puntos GPS (\(routeLocations.count))")
         }
         
-        // Finalizar la sesión DESPUÉS de finishWorkout
         session.end()
-        print("✅ [Workout] Sesión finalizada")
         
-        // Actualizar el workout con metadata personalizado (nombre "Enduro Time Tracker")
-        // HealthKit permite actualizar metadata después de guardar usando HKAnchoredObjectQuery
-        // Pero la forma más simple es crear un nuevo workout con el mismo UUID y metadata actualizado
-        // Sin embargo, esto puede crear duplicados. Intentemos usar el workout original con metadata.
-        
-        // IMPORTANTE: Asociar la ruta GPS al workout original que ya está guardado
-        // NO vamos a crear un workout nuevo porque eso rompería la asociación de la ruta GPS
-        // El workout se guardará como "Other" pero con la ruta GPS correctamente asociada
-        if let routeBuilder = routeBuilder {
-            print("🗺️ [GPS] Finalizando ruta GPS con workout guardado...")
-            print("🗺️ [GPS] Asociando ruta al workout UUID: \(workout.uuid)")
-            print("🗺️ [GPS] Workout start: \(workout.startDate), end: \(workout.endDate)")
-            
-            // Asociar la ruta al workout original (el que ya está guardado por finishWorkout)
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                routeBuilder.finishRoute(with: workout, metadata: nil) { route, error in
-                    if let error = error {
-                        print("❌ [GPS] Error finalizando ruta GPS: \(error.localizedDescription)")
-                        print("❌ [GPS] Detalles del error: \(error)")
-                        continuation.resume()
-                    } else if route != nil {
-                        print("✅ [GPS] Ruta GPS guardada exitosamente y asociada al workout")
-                        print("✅ [GPS] Route UUID: \(route!.uuid)")
-                        print("✅ [GPS] Route asociado al workout UUID: \(workout.uuid)")
-                        print("✅ [GPS] La ruta GPS debería aparecer en la app Fitness")
-                        continuation.resume()
-                    } else {
-                        print("⚠️ [GPS] finishRoute completó pero no se retornó ruta")
-                        print("⚠️ [GPS] Esto puede indicar que no se guardaron ubicaciones en el routeBuilder")
-                        print("⚠️ [GPS] Verifica que se hayan recibido ubicaciones durante el workout")
-                        continuation.resume()
-                    }
-                }
-            }
-        } else {
-            print("⚠️ [GPS] No hay routeBuilder para finalizar")
-        }
-        
-        // Agregar elevation gain como metadata (HealthKit no tiene tipo de cantidad para esto)
-        // NOTA: La app Fitness puede no mostrar este metadata, pero quedará guardado
-        let existingMetadata = workout.metadata ?? [:]
-        // Filtrar claves privadas
-        let filteredMetadata = existingMetadata.filter { key, _ in
-            !key.hasPrefix("_") && !key.hasPrefix("HKPrivate")
-        }
-        var updatedMetadata = filteredMetadata
-        // Intentar agregar nombre personalizado (puede que no funcione para .cycling)
-        updatedMetadata[HKMetadataKeyWorkoutBrandName] = "Enduro Time Tracker"
-        updatedMetadata["HKWorkoutActivityName"] = "Enduro Time Tracker"
-        
-        // NOTA IMPORTANTE: Para workouts .cycling, HealthKit/Fitness calcula automáticamente
-        // el elevation gain desde el GPS track (las altitudes de las ubicaciones en la ruta).
-        // No hay un tipo de cantidad específico para elevation gain que podamos agregar manualmente.
-        // 
-        // El elevation gain aparecerá en Fitness si:
-        // 1. Las ubicaciones GPS tienen altitudes válidas (no 0)
-        // 2. Hay cambios significativos de altitud durante el workout
-        // 3. El GPS está capturando altitudes correctamente
-        //
-        // Agregamos el elevation gain calculado como metadata para referencia,
-        // pero Fitness lo calculará automáticamente desde el GPS track.
-        if elevationGain > 0 {
-            updatedMetadata["ElevationGain"] = elevationGain // en metros
-            print("📊 [Workout] Elevation gain calculado: \(String(format: "%.2f", elevationGain))m")
-            print("📊 [Workout] NOTA: Fitness calculará elevation gain automáticamente desde el GPS track")
-            print("📊 [Workout] Si no aparece, verifica que las ubicaciones GPS tengan altitudes válidas")
-        } else {
-            print("⚠️ [Workout] Elevation gain = 0m")
-            print("⚠️ [Workout] Esto puede ser porque:")
-            print("  - No hubo cambios significativos de altitud durante el workout")
-            print("  - Las altitudes GPS no están disponibles (ver logs de altitudes arriba)")
-            print("  - El GPS no está capturando altitudes correctamente")
-        }
-        
-        // NOTA: El workout se guardará como "Outdoor Cycle" (tipo .cycling)
-        // Esto es necesario para que la distancia aparezca en Fitness
-        // El nombre personalizado puede no aplicarse, pero los datos estarán completos
-        print("ℹ️ [Workout] Workout guardado como 'Outdoor Cycle' (.cycling) para que aparezca distancia")
-        print("ℹ️ [Workout] Todos los datos están guardados: distancia, elevation, velocidad, GPS track")
-        
-        // Si en el futuro queremos intentar actualizar el nombre, podríamos usar:
-        // - HKAnchoredObjectQuery para leer el workout
-        // - Eliminar el workout original
-        // - Crear uno nuevo con metadata actualizado
-        // Pero esto es complejo y puede causar problemas con la ruta GPS asociada
-        
-        // Limpiar variables de métricas GPS
         allLocations = []
         totalDistance = 0.0
         elevationGain = 0.0
         previousLocation = nil
         
-        // Limpiar referencias SOLO después de que todo se haya guardado correctamente
-        await MainActor.run {
-            workoutSession = nil
-            workoutBuilder = nil
-            workoutStartTime = nil
-            isWorkoutActive = false
-            isWorkoutSessionRunning = false
-            routeBuilder = nil
-        }
-        print("✅ [Workout] Workout completamente finalizado y limpiado")
+        workoutSession = nil
+        workoutBuilder = nil
+        workoutStartTime = nil
+        isWorkoutActive = false
+        isWorkoutSessionRunning = false
     }
     
     // MARK: - Location Authorization
@@ -597,29 +474,115 @@ class HealthKitManager: NSObject, ObservableObject {
     
     // MARK: - Location Tracking (GPS)
     
+    private func isCollectibleGPSLocation(_ location: CLLocation) -> Bool {
+        let timeDiff = location.timestamp.timeIntervalSinceNow
+        return location.coordinate.latitude != 0 &&
+               location.coordinate.longitude != 0 &&
+               location.horizontalAccuracy > 0 &&
+               location.horizontalAccuracy < 200 &&
+               timeDiff > -300
+    }
+    
+    private func isRouteQualityGPSLocation(_ location: CLLocation) -> Bool {
+        isCollectibleGPSLocation(location) && location.horizontalAccuracy <= 100
+    }
+    
+    private func routeLocationsForSaving(start: Date, end: Date) -> [CLLocation] {
+        allLocations
+            .filter { isRouteQualityGPSLocation($0) }
+            .filter { $0.timestamp >= start.addingTimeInterval(-5) && $0.timestamp <= end.addingTimeInterval(5) }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+    
+    private func saveWorkoutRoute(for workout: HKWorkout, locations: [CLLocation]) async throws {
+        print("🗺️ [GPS] Guardando ruta (\(locations.count) puntos)")
+        
+        let routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            routeBuilder.insertRouteData(locations) { success, error in
+                if let error {
+                    print("❌ [GPS] Error insertRouteData: \(error.localizedDescription)")
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: HealthKitError.noActiveWorkout)
+                }
+            }
+        }
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            routeBuilder.finishRoute(with: workout, metadata: nil) { route, error in
+                if let error {
+                    print("❌ [GPS] Error finishRoute: \(error.localizedDescription)")
+                    continuation.resume(throwing: error)
+                } else if let route {
+                    print("✅ [GPS] Ruta guardada: \(route.uuid)")
+                    continuation.resume()
+                } else {
+                    print("⚠️ [GPS] finishRoute completó sin ruta")
+                    continuation.resume(throwing: HealthKitError.noActiveWorkout)
+                }
+            }
+        }
+    }
+    
+    private func verifySavedWorkoutRoute(for workout: HKWorkout) async {
+        let predicate = HKQuery.predicateForObjects(from: workout)
+        let routeType = HKSeriesType.workoutRoute()
+        
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let query = HKSampleQuery(
+                sampleType: routeType,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error {
+                    print("❌ [GPS] Verificación: \(error.localizedDescription)")
+                    continuation.resume()
+                    return
+                }
+                guard let route = samples?.first as? HKWorkoutRoute else {
+                    print("⚠️ [GPS] Verificación: ninguna ruta asociada al workout en HealthKit")
+                    continuation.resume()
+                    return
+                }
+                
+                var pointCount = 0
+                let routeQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
+                    if let error {
+                        print("❌ [GPS] Verificación puntos: \(error.localizedDescription)")
+                        if done { continuation.resume() }
+                        return
+                    }
+                    pointCount += locations?.count ?? 0
+                    if done {
+                        print("✅ [GPS] Verificación: ruta \(route.uuid) con \(pointCount) puntos en HealthKit")
+                        continuation.resume()
+                    }
+                }
+                self.healthStore.execute(routeQuery)
+            }
+            self.healthStore.execute(query)
+        }
+    }
+    
     private func startLocationTracking() {
         guard !isLocationTrackingActive else { return }
-        
-        let authorizationStatus = CLLocationManager().authorizationStatus
-        HealthKitDiagnostics.log("🚀 [GPS] Estado de autorización inicial: \(authorizationStatus.rawValue)")
-        
         guard hasLocationAuthorization else {
-            print("⚠️ [GPS] Sin permiso de ubicación; no se muestra diálogo en TC1 para evitar salir a carátula")
+            print("⚠️ [GPS] Sin permiso de ubicación")
             return
         }
         
         isLocationTrackingActive = true
-        HealthKitDiagnostics.log("🚀 [GPS] Iniciando GPS tracking...")
         locationManager = CLLocationManager()
         locationManager?.delegate = self
-        locationManager?.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-        locationManager?.distanceFilter = 10.0
-        
-        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
-        HealthKitDiagnostics.log("🚀 [GPS] RouteBuilder creado")
-        
+        locationManager?.activityType = .fitness
+        locationManager?.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager?.distanceFilter = kCLDistanceFilterNone
         locationManager?.startUpdatingLocation()
-        HealthKitDiagnostics.log("🚀 [GPS] LocationManager iniciado")
     }
     
     private func endLocationTracking() {
@@ -652,8 +615,6 @@ class HealthKitManager: NSObject, ObservableObject {
 
 extension HealthKitManager: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
-        print("🏃 [Workout] Estado \(fromState.rawValue) → \(toState.rawValue)")
-        
         Task { @MainActor in
             switch toState {
             case .prepared:
@@ -663,7 +624,6 @@ extension HealthKitManager: HKWorkoutSessionDelegate {
                 isWorkoutSessionPrepared = false
                 isWorkoutSessionRunning = true
                 completeRunningContinuation()
-                startLocationTracking()
             case .ended, .stopped:
                 isWorkoutSessionPrepared = false
                 isWorkoutSessionRunning = false
@@ -685,126 +645,46 @@ extension HealthKitManager: HKWorkoutSessionDelegate {
 // MARK: - HKLiveWorkoutBuilderDelegate
 
 extension HealthKitManager: HKLiveWorkoutBuilderDelegate {
-    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        // Los datos se están recolectando automáticamente
-    }
-    
-    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {
-        // Eventos del workout
-    }
+    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {}
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 }
 
 // MARK: - CLLocationManagerDelegate
 
 extension HealthKitManager: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let routeBuilder = routeBuilder else {
-            print("❌ [GPS] RouteBuilder no está disponible")
-            return
-        }
+        guard isLocationTrackingActive else { return }
         
-        let validLocations = locations.filter { location in
-            let timeDiff = location.timestamp.timeIntervalSinceNow
-            return location.coordinate.latitude != 0 &&
-                   location.coordinate.longitude != 0 &&
-                   location.horizontalAccuracy > 0 &&
-                   location.horizontalAccuracy < 200 &&
-                   timeDiff > -300
-        }
-        
+        let validLocations = locations.filter { isCollectibleGPSLocation($0) }
         guard !validLocations.isEmpty else { return }
         
-        for location in validLocations {
-            if let previous = previousLocation {
-                let distance = location.distance(from: previous)
-                totalDistance += distance
-                
-                let currentAltitude = location.altitude
-                let previousAltitude = previous.altitude
-                
-                if abs(currentAltitude) > 0.1 && abs(previousAltitude) > 0.1 {
-                    let altitudeDiff = currentAltitude - previousAltitude
-                    if altitudeDiff > 1.0 {
-                        elevationGain += altitudeDiff
-                    }
-                }
-            }
-            
-            previousLocation = location
-            allLocations.append(location)
-        }
-        
-        routeBuilder.insertRouteData(validLocations) { success, error in
-            if let error = error {
-                print("❌ [GPS] Error agregando ubicación al route: \(error.localizedDescription)")
-            } else if !success {
-                print("⚠️ [GPS] insertRouteData completó pero success = false")
-            }
+        allLocations.append(contentsOf: validLocations)
+        if let last = validLocations.last {
+            previousLocation = last
         }
     }
     
-    // MARK: - Metrics Calculation
-    
     private func calculateMetricsFromLocations() {
-        guard allLocations.count >= 2 else {
-            print("⚠️ [Metrics] No hay suficientes ubicaciones para calcular métricas")
-            return
-        }
+        guard allLocations.count >= 2 else { return }
         
-        // Recalcular métricas desde todas las ubicaciones guardadas
         totalDistance = 0.0
         elevationGain = 0.0
         
         for i in 1..<allLocations.count {
             let current = allLocations[i]
-            let previous = allLocations[i-1]
+            let previous = allLocations[i - 1]
             
-            // Calcular distancia
-            let distance = current.distance(from: previous)
-            totalDistance += distance
+            totalDistance += current.distance(from: previous)
             
-            // Calcular elevation gain
-            // Mejorar el cálculo: aceptar altitudes válidas y filtrar ruido
-            let currentAltitude = current.altitude
-            let previousAltitude = previous.altitude
-            
-            if abs(currentAltitude) > 0.1 && abs(previousAltitude) > 0.1 {
-                let altitudeDiff = currentAltitude - previousAltitude
-                // Solo contar aumentos de altitud (elevation gain)
-                // Filtrar cambios menores a 1 metro para reducir ruido del GPS
-                if altitudeDiff > 1.0 {
-                    elevationGain += altitudeDiff
-                }
+            let altitudeDiff = current.altitude - previous.altitude
+            if abs(current.altitude) > 0.1, abs(previous.altitude) > 0.1, altitudeDiff > 1.0 {
+                elevationGain += altitudeDiff
             }
         }
         
-        print("📊 [Metrics] Métricas finales calculadas:")
-        print("  - Distancia total: \(String(format: "%.2f", totalDistance))m (\(String(format: "%.2f", totalDistance / 1000.0))km)")
-        print("  - Elevation gain: \(String(format: "%.2f", elevationGain))m")
-        
-        // Diagnosticar altitudes recibidas
-        if !allLocations.isEmpty {
-            let altitudes = allLocations.compactMap { $0.altitude != 0 ? $0.altitude : nil }
-            if !altitudes.isEmpty {
-                let minAltitude = altitudes.min() ?? 0
-                let maxAltitude = altitudes.max() ?? 0
-                let avgAltitude = altitudes.reduce(0, +) / Double(altitudes.count)
-                print("  - Altitudes GPS: min=\(String(format: "%.1f", minAltitude))m, max=\(String(format: "%.1f", maxAltitude))m, avg=\(String(format: "%.1f", avgAltitude))m")
-                print("  - Ubicaciones con altitud válida: \(altitudes.count)/\(allLocations.count)")
-            } else {
-                print("  ⚠️ No se recibieron altitudes válidas del GPS")
-                print("  ⚠️ Esto puede ser porque el GPS no tiene señal de altitud o el dispositivo no la está capturando")
-            }
-        }
-        
-        if let startTime = workoutStartTime {
-            let duration = Date().timeIntervalSince(startTime)
-            if duration > 0 {
-                let avgSpeedMps = totalDistance / duration
-                let avgSpeedKmh = avgSpeedMps * 3.6
-                print("  - Velocidad promedio: \(String(format: "%.2f", avgSpeedKmh)) km/h")
-            }
-        }
+        #if DEBUG
+        print("📊 [Metrics] \(String(format: "%.0f", totalDistance))m, elev +\(String(format: "%.0f", elevationGain))m, \(allLocations.count) pts")
+        #endif
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -815,25 +695,10 @@ extension HealthKitManager: CLLocationManagerDelegate {
     }
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        HealthKitDiagnostics.log("📍 [GPS] Estado de autorización cambiado: \(status.rawValue)")
-        
-        switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
-            if isWorkoutActive, isLocationTrackingActive {
-                locationManager?.startUpdatingLocation()
-            }
-        case .denied:
-            print("❌ [GPS] Autorización denegada")
-        case .restricted:
-            print("❌ [GPS] Autorización restringida")
-        default:
-            break
+        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse,
+           isWorkoutActive, isLocationTrackingActive {
+            locationManager?.startUpdatingLocation()
         }
-    }
-    
-    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        // No necesario para GPS tracking, pero puede ser útil para debugging
     }
 }
 
