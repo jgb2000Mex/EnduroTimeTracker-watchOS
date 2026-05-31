@@ -154,8 +154,20 @@ class LocalizationManager {
             .german: ""
         ],
         "versionNumber": [
-            .english: "Version 1.0",
-            .spanish: "Versión 1.0",
+            .english: "Version 1.1",
+            .spanish: "Versión 1.1",
+            .french: "",
+            .german: ""
+        ],
+        "versionChangelogTitle": [
+            .english: "What's New",
+            .spanish: "Novedades",
+            .french: "",
+            .german: ""
+        ],
+        "versionChangelog": [
+            .english: "• App stays active until race start\n• GPS route saved to Fitness\n• Finish early at last time control\n• Battery savings on race screen",
+            .spanish: "• App activa hasta inicio de carrera\n• Ruta GPS guardada en Fitness\n• Finalizar en el último tiempo ideal\n• Ahorro de batería en carrera",
             .french: "",
             .german: ""
         ],
@@ -286,6 +298,18 @@ class LocalizationManager {
         "timeOfTC": [
             .english: "Time of TC",
             .spanish: "Hora Tiempo Ideal",
+            .french: "",
+            .german: ""
+        ],
+        "finishRaceButton": [
+            .english: "Finish Race",
+            .spanish: "Finalizar Carrera",
+            .french: "",
+            .german: ""
+        ],
+        "finishRaceConfirmationQuestion": [
+            .english: "Finish race now?",
+            .spanish: "¿Finalizar carrera ahora?",
             .french: "",
             .german: ""
         ],

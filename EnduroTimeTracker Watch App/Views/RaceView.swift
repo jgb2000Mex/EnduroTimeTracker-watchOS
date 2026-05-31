@@ -46,6 +46,7 @@ struct RaceView: View {
     @State private var showPenaltyConfirmation = false
     @State private var showPenaltyPicker = false
     @State private var selectedPenaltyMinutes = 1
+    @State private var showFinishRaceConfirmation = false
     
     // Timestamp para rastrear cuándo se entró a la vista
     // Esto previene que GO! aparezca durante los primeros 3 segundos
@@ -115,46 +116,52 @@ struct RaceView: View {
                 } else {
                     // Mostrar countdown timer (ya sea porque showGoScreen es false o porque no han pasado 5 segundos)
                     ZStack {
-                        VStack(spacing: 1) {
-                            // Spacer para dejar espacio para el header del sistema y toolbar
-                            Spacer()
-                                .frame(height: 12)
-                            
-                            // Nombre del siguiente TC
-                            Text(getTimeLeftTitle())
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 8)
-                            
-                            // Countdown grande (formato reducido con muñeca abajo)
-                            Text(formatCountdown(timeRemaining, includeSeconds: !isCountdownDisplayReduced))
-                                .font(.system(size: 55, weight: .bold, design: .rounded))
-                                .foregroundColor(.orange)
-                                .monospacedDigit()
-                                .minimumScaleFactor(0.5)
-                                .lineLimit(1)
-                            
-                            Spacer()
-                                .frame(height: 8)
-                            
-                            // Información del siguiente TC
-                            VStack(spacing: 2) {
-                                Text(getTimeOfNextTCTitle())
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                    .foregroundColor(.gray)
-                                    .minimumScaleFactor(0.7)
-                                    .lineLimit(2)
-                                Text(formatTime(getCurrentTimeControlTime()))
-                                    .font(.system(size: 35, weight: .bold, design: .rounded))
-                                    .fontWeight(.semibold)
+                        ScrollView {
+                            VStack(spacing: 1) {
+                                // Spacer para dejar espacio para el header del sistema y toolbar
+                                Spacer()
+                                    .frame(height: 12)
+                                
+                                // Nombre del siguiente TC
+                                Text(getTimeLeftTitle())
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
-                                    .minimumScaleFactor(0.7)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 8)
+                                
+                                // Countdown grande (formato reducido con muñeca abajo)
+                                Text(formatCountdown(timeRemaining, includeSeconds: !isCountdownDisplayReduced))
+                                    .font(.system(size: 55, weight: .bold, design: .rounded))
+                                    .foregroundColor(.orange)
+                                    .monospacedDigit()
+                                    .minimumScaleFactor(0.5)
                                     .lineLimit(1)
+                                
+                                Spacer()
+                                    .frame(height: 8)
+                                
+                                // Información del siguiente TC
+                                VStack(spacing: 2) {
+                                    Text(getTimeOfNextTCTitle())
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundColor(.gray)
+                                        .minimumScaleFactor(0.7)
+                                        .lineLimit(2)
+                                    Text(formatTime(getCurrentTimeControlTime()))
+                                        .font(.system(size: 35, weight: .bold, design: .rounded))
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .minimumScaleFactor(0.7)
+                                        .lineLimit(1)
+                                }
+                                .padding(.bottom, 8)
+                                
+                                if isOnLastTimeControl() && !isScreenLocked {
+                                    finishRaceEarlySection
+                                }
                             }
-                            .padding(.bottom, 8)
                         }
                         
                         // Overlay de Screen Lock que aparece solo una vez al iniciar la carrera
@@ -181,6 +188,12 @@ struct RaceView: View {
                         if showPenaltyConfirmation {
                             penaltyConfirmationOverlay
                                 .zIndex(1004)
+                        }
+                        
+                        // Overlay de confirmación para finalizar carrera
+                        if showFinishRaceConfirmation {
+                            finishRaceConfirmationOverlay
+                                .zIndex(1005)
                         }
                     }
                 }
@@ -219,7 +232,7 @@ struct RaceView: View {
             }
         }
         .toolbar {
-            if getCurrentTimeControl() != nil && !showPenaltyConfirmation && !showPenaltyPicker {
+            if getCurrentTimeControl() != nil && !showPenaltyConfirmation && !showPenaltyPicker && !showFinishRaceConfirmation {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
                         Button(action: {
@@ -315,6 +328,31 @@ struct RaceView: View {
     private func getFirstNonParcFermeIndex() -> Int {
         let allControls = getAllControls()
         return allControls.firstIndex { $0.name != "Parc Ferme" } ?? -1
+    }
+    
+    /// Verdadero solo durante el último time control (meta), no en Parc Fermé ni en otros TC.
+    private func isOnLastTimeControl() -> Bool {
+        let allControls = getAllControls()
+        guard allControls.count > 1,
+              getCurrentTimeControl() != nil,
+              currentTimeControlIndex == allControls.count - 1 else {
+            return false
+        }
+        return getCurrentTimeControl()?.name != "Parc Ferme"
+    }
+    
+    private func finishRaceEarly() {
+        guard isOnLastTimeControl() else { return }
+        
+        showGoScreen = false
+        showFinishRaceConfirmation = false
+        timer?.invalidate()
+        
+        let allControls = getAllControls()
+        currentTimeControlIndex = allControls.count
+        isScreenLocked = false
+        unlockClickCount = 0
+        showUnlockOverlay = false
     }
     
     private func resetAlerts() {
@@ -1012,6 +1050,93 @@ struct RaceView: View {
                 showUnlockOverlay = false // Ocultar overlay al desbloquear
             }
         }
+    }
+    
+    // MARK: - Finish Race Early
+    
+    private var finishRaceEarlySection: some View {
+        VStack(spacing: 8) {
+            Spacer()
+                .frame(height: 12)
+            
+            Button(action: {
+                showFinishRaceConfirmation = true
+            }) {
+                HStack(spacing: 8) {
+                    Image("ChequeredFlag")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                    Text("finishRaceButton".localized)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GlassButtonStyle(height: .compactButtonHeight))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+        }
+    }
+    
+    private var finishRaceConfirmationOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.75)
+                .ignoresSafeArea()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            VStack(spacing: 8) {
+                Spacer()
+                
+                Image("ChequeredFlag")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                
+                Text("finishRaceConfirmationQuestion".localized)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 12)
+                
+                HStack(spacing: 12) {
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            finishRaceEarly()
+                        }
+                    }) {
+                        Text("yesButton".localized)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(width: 65, height: 36)
+                    }
+                    .buttonStyle(GlassButtonStyle(cornerRadius: 18, height: 36))
+                    
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            showFinishRaceConfirmation = false
+                        }
+                    }) {
+                        Text("noButton".localized)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(width: 65, height: 36)
+                    }
+                    .buttonStyle(GlassButtonStyle(cornerRadius: 18, height: 36))
+                }
+                .padding(.top, 4)
+                
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .allowsHitTesting(true)
     }
     
     // MARK: - Penalty Overlays

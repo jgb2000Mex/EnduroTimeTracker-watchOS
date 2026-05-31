@@ -50,7 +50,27 @@ struct VersionView: View {
                         .lineLimit(1)
                     
                     Spacer()
-                        .frame(minHeight: 20)
+                        .frame(height: 16)
+                    
+                    Text("versionChangelogTitle".localized)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.gray)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                        .frame(height: 8)
+                    
+                    Text("versionChangelog".localized)
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundColor(.white.opacity(0.85))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                    
+                    Spacer()
+                        .frame(minHeight: 24)
                 }
                 .frame(maxWidth: .infinity)
             }
