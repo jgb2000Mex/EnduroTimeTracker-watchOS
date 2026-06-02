@@ -48,6 +48,8 @@ class HealthKitManager: NSObject, ObservableObject {
     private var elevationGain: Double = 0.0 // en metros
     private var previousLocation: CLLocation?
     private var isLocationTrackingActive = false
+    private var workoutWeather: WorkoutWeatherSnapshot?
+    private var weatherFetchTask: Task<Void, Never>?
     private let typesToShare: Set<HKSampleType> = {
         var types: Set<HKSampleType> = []
         
@@ -295,6 +297,9 @@ class HealthKitManager: NSObject, ObservableObject {
         totalDistance = 0.0
         elevationGain = 0.0
         previousLocation = nil
+        workoutWeather = nil
+        weatherFetchTask?.cancel()
+        weatherFetchTask = nil
         
         let session: HKWorkoutSession
         let builder: HKLiveWorkoutBuilder
@@ -356,6 +361,11 @@ class HealthKitManager: NSObject, ObservableObject {
         
         print("🛑 [Workout] Iniciando finalización...")
         
+        if let weatherFetchTask {
+            print("⏳ [Weather] Esperando datos de clima...")
+            await weatherFetchTask.value
+        }
+        
         endLocationTracking()
         calculateMetricsFromLocations()
         
@@ -364,7 +374,21 @@ class HealthKitManager: NSObject, ObservableObject {
         }
         
         let routeLocations = routeLocationsForSaving(start: workoutStart, end: endTime)
-        print("🛑 [Workout] GPS: \(routeLocations.count) puntos ruta / \(allLocations.count) crudos")
+        
+        if workoutWeather == nil, let location = routeLocations.first ?? allLocations.first {
+            print("🔄 [Weather] Reintento al finalizar con última ubicación GPS...")
+            if let snapshot = await WeatherCaptureManager.shared.fetchWeather(for: location) {
+                workoutWeather = snapshot
+                print("✅ [Weather] \(snapshot.logDescription)")
+            }
+        }
+        
+        let durationMinutes = endTime.timeIntervalSince(workoutStart) / 60.0
+        if let first = routeLocations.first?.timestamp, let last = routeLocations.last?.timestamp {
+            print("🛑 [Workout] GPS: \(routeLocations.count) puntos ruta / \(allLocations.count) crudos, carrera \(String(format: "%.0f", durationMinutes)) min, ruta \(first) → \(last)")
+        } else {
+            print("🛑 [Workout] GPS: \(routeLocations.count) puntos ruta / \(allLocations.count) crudos, carrera \(String(format: "%.0f", durationMinutes)) min")
+        }
         
         var samplesToAdd: [HKSample] = []
         
@@ -402,7 +426,17 @@ class HealthKitManager: NSObject, ObservableObject {
         }
         
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            builder.addMetadata([HKMetadataKeyIndoorWorkout: false]) { _, _ in
+            var metadata: [String: Any] = [HKMetadataKeyIndoorWorkout: false]
+            if let workoutWeather {
+                metadata.merge(WeatherCaptureManager.shared.healthKitMetadata(from: workoutWeather)) { _, new in new }
+                print("✅ [Weather] Metadata: \(workoutWeather.logDescription)")
+            } else {
+                print("⚠️ [Weather] Sin metadata de clima para este workout")
+            }
+            builder.addMetadata(metadata) { _, error in
+                if let error {
+                    print("⚠️ [Workout] Error agregando metadata: \(error.localizedDescription)")
+                }
                 continuation.resume()
             }
         }
@@ -442,6 +476,8 @@ class HealthKitManager: NSObject, ObservableObject {
         totalDistance = 0.0
         elevationGain = 0.0
         previousLocation = nil
+        workoutWeather = nil
+        weatherFetchTask = nil
         
         workoutSession = nil
         workoutBuilder = nil
@@ -475,12 +511,25 @@ class HealthKitManager: NSObject, ObservableObject {
     // MARK: - Location Tracking (GPS)
     
     private func isCollectibleGPSLocation(_ location: CLLocation) -> Bool {
-        let timeDiff = location.timestamp.timeIntervalSinceNow
-        return location.coordinate.latitude != 0 &&
-               location.coordinate.longitude != 0 &&
-               location.horizontalAccuracy > 0 &&
-               location.horizontalAccuracy < 200 &&
-               timeDiff > -300
+        guard location.coordinate.latitude != 0,
+              location.coordinate.longitude != 0,
+              location.horizontalAccuracy > 0,
+              location.horizontalAccuracy < 200 else {
+            return false
+        }
+        
+        // Rechazar fixes en caché anteriores al workout (p. ej. al arrancar GPS en TC1).
+        if let workoutStart = workoutStartTime,
+           location.timestamp < workoutStart.addingTimeInterval(-30) {
+            return false
+        }
+        
+        // Rechazar timestamps claramente futuros.
+        if location.timestamp.timeIntervalSinceNow > 10 {
+            return false
+        }
+        
+        return true
     }
     
     private func isRouteQualityGPSLocation(_ location: CLLocation) -> Bool {
@@ -490,7 +539,7 @@ class HealthKitManager: NSObject, ObservableObject {
     private func routeLocationsForSaving(start: Date, end: Date) -> [CLLocation] {
         allLocations
             .filter { isRouteQualityGPSLocation($0) }
-            .filter { $0.timestamp >= start.addingTimeInterval(-5) && $0.timestamp <= end.addingTimeInterval(5) }
+            .filter { $0.timestamp >= start.addingTimeInterval(-30) && $0.timestamp <= end.addingTimeInterval(30) }
             .sorted { $0.timestamp < $1.timestamp }
     }
     
@@ -661,6 +710,20 @@ extension HealthKitManager: CLLocationManagerDelegate {
         allLocations.append(contentsOf: validLocations)
         if let last = validLocations.last {
             previousLocation = last
+            captureWeatherIfNeeded(from: last)
+        }
+    }
+    
+    private func captureWeatherIfNeeded(from location: CLLocation) {
+        guard isWorkoutActive, workoutWeather == nil, weatherFetchTask == nil else { return }
+        
+        weatherFetchTask = Task {
+            if let snapshot = await WeatherCaptureManager.shared.fetchWeather(for: location) {
+                workoutWeather = snapshot
+                print("✅ [Weather] \(snapshot.logDescription)")
+            } else {
+                print("⚠️ [Weather] No se obtuvieron datos de clima")
+            }
         }
     }
     
