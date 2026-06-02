@@ -48,8 +48,10 @@ class HealthKitManager: NSObject, ObservableObject {
     private var elevationGain: Double = 0.0 // en metros
     private var previousLocation: CLLocation?
     private var isLocationTrackingActive = false
-    private var workoutWeather: WorkoutWeatherSnapshot?
-    private var weatherFetchTask: Task<Void, Never>?
+    private var weatherSamples = WorkoutWeatherSamples()
+    private var startWeatherFetchTask: Task<Void, Never>?
+    private var lastFinalizedWorkout: HKWorkout?
+    private var lastFinalizedWorkoutUUID: UUID?
     private let typesToShare: Set<HKSampleType> = {
         var types: Set<HKSampleType> = []
         
@@ -88,6 +90,10 @@ class HealthKitManager: NSObject, ObservableObject {
         
         // Workout Route (GPS) - requiere también HKWorkoutType (ya incluido arriba)
         types.insert(HKSeriesType.workoutRoute())
+        
+        if let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) {
+            types.insert(effortType)
+        }
         
         return types
     }()
@@ -128,6 +134,10 @@ class HealthKitManager: NSObject, ObservableObject {
         
         // Workout Route (GPS) - requiere también HKWorkoutType
         types.insert(HKSeriesType.workoutRoute())
+        
+        if let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) {
+            types.insert(effortType)
+        }
         
         return types
     }()
@@ -297,9 +307,9 @@ class HealthKitManager: NSObject, ObservableObject {
         totalDistance = 0.0
         elevationGain = 0.0
         previousLocation = nil
-        workoutWeather = nil
-        weatherFetchTask?.cancel()
-        weatherFetchTask = nil
+        weatherSamples = WorkoutWeatherSamples()
+        startWeatherFetchTask?.cancel()
+        startWeatherFetchTask = nil
         
         let session: HKWorkoutSession
         let builder: HKLiveWorkoutBuilder
@@ -346,24 +356,36 @@ class HealthKitManager: NSObject, ObservableObject {
         print("✅ [Workout] Workout activo (GPS iniciado)")
     }
     
-    func endWorkout(endTime: Date) async throws {
-        guard let session = workoutSession,
+    func endWorkout(endTime: Date, effortScore: Int? = nil) async throws {
+        try await finalizeWorkout(endTime: endTime)
+        if let effortScore {
+            try await addEffortScore(effortScore)
+        }
+        completeRaceWorkoutCleanup()
+    }
+    
+    /// Guarda ruta, métricas y clima en Fitness en cuanto termina la carrera (antes de Effort / End of Race).
+    @discardableResult
+    func finalizeWorkout(endTime: Date) async throws -> HKWorkout {
+        guard workoutSession != nil,
               let builder = workoutBuilder else {
             print("⚠️ [Workout] No hay workout activo para finalizar")
             throw HealthKitError.noActiveWorkout
         }
         
-        // Verificar que el workout esté activo antes de finalizar
         guard isWorkoutActive else {
             print("⚠️ [Workout] El workout ya fue finalizado anteriormente")
+            if let lastFinalizedWorkout {
+                return lastFinalizedWorkout
+            }
             throw HealthKitError.noActiveWorkout
         }
         
-        print("🛑 [Workout] Iniciando finalización...")
+        print("🛑 [Workout] Guardando carrera en Fitness...")
         
-        if let weatherFetchTask {
-            print("⏳ [Weather] Esperando datos de clima...")
-            await weatherFetchTask.value
+        if let startWeatherFetchTask {
+            print("⏳ [Weather] Esperando clima de inicio TC1...")
+            await startWeatherFetchTask.value
         }
         
         endLocationTracking()
@@ -375,12 +397,17 @@ class HealthKitManager: NSObject, ObservableObject {
         
         let routeLocations = routeLocationsForSaving(start: workoutStart, end: endTime)
         
-        if workoutWeather == nil, let location = routeLocations.first ?? allLocations.first {
-            print("🔄 [Weather] Reintento al finalizar con última ubicación GPS...")
-            if let snapshot = await WeatherCaptureManager.shared.fetchWeather(for: location) {
-                workoutWeather = snapshot
-                print("✅ [Weather] \(snapshot.logDescription)")
+        if let endLocation = routeLocations.last ?? allLocations.last {
+            if let snapshot = await WeatherCaptureManager.shared.fetchWeather(for: endLocation) {
+                weatherSamples.atEnd = snapshot
+                print("✅ [Weather] Fin de carrera: \(snapshot.logDescription)")
+            } else {
+                print("⚠️ [Weather] No se pudo obtener clima al finalizar")
             }
+        }
+        
+        if let start = weatherSamples.atStart {
+            print("ℹ️ [Weather] Inicio TC1: \(start.logDescription)")
         }
         
         let durationMinutes = endTime.timeIntervalSince(workoutStart) / 60.0
@@ -427,9 +454,10 @@ class HealthKitManager: NSObject, ObservableObject {
         
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             var metadata: [String: Any] = [HKMetadataKeyIndoorWorkout: false]
-            if let workoutWeather {
-                metadata.merge(WeatherCaptureManager.shared.healthKitMetadata(from: workoutWeather)) { _, new in new }
-                print("✅ [Weather] Metadata: \(workoutWeather.logDescription)")
+            if let fitnessWeather = weatherSamples.preferredForFitness {
+                metadata.merge(WeatherCaptureManager.shared.healthKitMetadata(from: fitnessWeather)) { _, new in new }
+                let source = weatherSamples.atEnd != nil ? "fin de carrera" : "inicio TC1"
+                print("✅ [Weather] Metadata Fitness (\(source)): \(fitnessWeather.logDescription)")
             } else {
                 print("⚠️ [Weather] Sin metadata de clima para este workout")
             }
@@ -470,20 +498,78 @@ class HealthKitManager: NSObject, ObservableObject {
             print("⚠️ [GPS] Insuficientes puntos GPS (\(routeLocations.count))")
         }
         
-        session.end()
+        lastFinalizedWorkout = workout
+        lastFinalizedWorkoutUUID = workout.uuid
+        print("✅ [Workout] Carrera guardada en Fitness (listo para esfuerzo opcional)")
+        
+        // La sesión sigue abierta hasta registrar esfuerzo o cerrar la carrera (mejora relateWorkoutEffortSample).
+        workoutBuilder = nil
+        workoutStartTime = nil
+        isWorkoutActive = false
         
         allLocations = []
         totalDistance = 0.0
         elevationGain = 0.0
         previousLocation = nil
-        workoutWeather = nil
-        weatherFetchTask = nil
+        weatherSamples = WorkoutWeatherSamples()
+        startWeatherFetchTask = nil
         
+        return workout
+    }
+    
+    /// Añade esfuerzo al workout ya guardado; re-lee el workout desde HealthKit por UUID.
+    func addEffortScore(_ score: Int) async throws {
+        guard let uuid = lastFinalizedWorkoutUUID else {
+            print("⚠️ [Workout] No hay workout guardado para registrar esfuerzo")
+            throw HealthKitError.noSavedWorkoutForEffort
+        }
+        
+        let workout = try await fetchWorkout(uuid: uuid)
+        try await saveWorkoutEffortScore(score, for: workout)
+        endWorkoutSessionIfNeeded()
+    }
+    
+    /// Cierra sesión HK y referencias al salir de la carrera (Dismiss en End of Race).
+    func completeRaceWorkoutCleanup() {
+        endWorkoutSessionIfNeeded()
+        lastFinalizedWorkout = nil
+        lastFinalizedWorkoutUUID = nil
+    }
+    
+    func clearFinalizedWorkoutReference() {
+        completeRaceWorkoutCleanup()
+    }
+    
+    private func endWorkoutSessionIfNeeded() {
+        guard let session = workoutSession else { return }
+        session.end()
         workoutSession = nil
-        workoutBuilder = nil
-        workoutStartTime = nil
-        isWorkoutActive = false
         isWorkoutSessionRunning = false
+        print("✅ [Workout] Sesión de workout cerrada")
+    }
+    
+    private func fetchWorkout(uuid: UUID) async throws -> HKWorkout {
+        let predicate = HKQuery.predicateForObject(with: uuid)
+        
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<HKWorkout, Error>) in
+            let query = HKSampleQuery(
+                sampleType: .workoutType(),
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let workout = samples?.first as? HKWorkout else {
+                    continuation.resume(throwing: HealthKitError.noSavedWorkoutForEffort)
+                    return
+                }
+                continuation.resume(returning: workout)
+            }
+            healthStore.execute(query)
+        }
     }
     
     // MARK: - Location Authorization
@@ -541,6 +627,35 @@ class HealthKitManager: NSObject, ObservableObject {
             .filter { isRouteQualityGPSLocation($0) }
             .filter { $0.timestamp >= start.addingTimeInterval(-30) && $0.timestamp <= end.addingTimeInterval(30) }
             .sorted { $0.timestamp < $1.timestamp }
+    }
+    
+    private func saveWorkoutEffortScore(_ score: Int, for workout: HKWorkout) async throws {
+        guard score >= 1, score <= 10,
+              let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) else {
+            return
+        }
+        
+        let sample = HKQuantitySample(
+            type: effortType,
+            quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: Double(score)),
+            start: workout.startDate,
+            end: workout.endDate
+        )
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            healthStore.relateWorkoutEffortSample(sample, with: workout, activity: nil) { success, error in
+                if let error {
+                    print("⚠️ [Workout] Error guardando esfuerzo: \(error.localizedDescription)")
+                    continuation.resume(throwing: error)
+                } else if success {
+                    print("✅ [Workout] Esfuerzo registrado: \(score)/10")
+                    continuation.resume()
+                } else {
+                    print("⚠️ [Workout] No se pudo relacionar esfuerzo con el workout")
+                    continuation.resume(throwing: HealthKitError.effortSaveFailed)
+                }
+            }
+        }
     }
     
     private func saveWorkoutRoute(for workout: HKWorkout, locations: [CLLocation]) async throws {
@@ -646,6 +761,8 @@ class HealthKitManager: NSObject, ObservableObject {
         case notAuthorized
         case noActiveWorkout
         case healthKitNotAvailable
+        case noSavedWorkoutForEffort
+        case effortSaveFailed
         
         var errorDescription: String? {
             switch self {
@@ -655,6 +772,10 @@ class HealthKitManager: NSObject, ObservableObject {
                 return "No hay una sesión de workout activa"
             case .healthKitNotAvailable:
                 return "HealthKit no está disponible en este dispositivo"
+            case .noSavedWorkoutForEffort:
+                return "No se encontró el workout guardado para registrar esfuerzo"
+            case .effortSaveFailed:
+                return "No se pudo guardar el esfuerzo en HealthKit"
             }
         }
     }
@@ -710,19 +831,19 @@ extension HealthKitManager: CLLocationManagerDelegate {
         allLocations.append(contentsOf: validLocations)
         if let last = validLocations.last {
             previousLocation = last
-            captureWeatherIfNeeded(from: last)
+            captureStartWeatherIfNeeded(from: last)
         }
     }
     
-    private func captureWeatherIfNeeded(from location: CLLocation) {
-        guard isWorkoutActive, workoutWeather == nil, weatherFetchTask == nil else { return }
+    private func captureStartWeatherIfNeeded(from location: CLLocation) {
+        guard isWorkoutActive, weatherSamples.atStart == nil, startWeatherFetchTask == nil else { return }
         
-        weatherFetchTask = Task {
+        startWeatherFetchTask = Task {
             if let snapshot = await WeatherCaptureManager.shared.fetchWeather(for: location) {
-                workoutWeather = snapshot
-                print("✅ [Weather] \(snapshot.logDescription)")
+                weatherSamples.atStart = snapshot
+                print("✅ [Weather] Inicio TC1: \(snapshot.logDescription)")
             } else {
-                print("⚠️ [Weather] No se obtuvieron datos de clima")
+                print("⚠️ [Weather] No se obtuvo clima al inicio TC1")
             }
         }
     }

@@ -47,6 +47,11 @@ struct RaceView: View {
     @State private var showPenaltyPicker = false
     @State private var selectedPenaltyMinutes = 1
     @State private var showFinishRaceConfirmation = false
+    @State private var hasPersistedWorkout = false
+    @State private var isPersistingWorkout = false
+    @State private var shouldOfferEffortRating = false
+    @State private var hasCompletedEffortRating = false
+    @State private var raceEndTime: Date?
     
     // Timestamp para rastrear cuándo se entró a la vista
     // Esto previene que GO! aparezca durante los primeros 3 segundos
@@ -74,28 +79,37 @@ struct RaceView: View {
             // Verificar primero si la carrera ya acabó (no hay más controles)
             // Si acabó, no mostrar GO! aunque showGoScreen esté en true
             if getCurrentTimeControl() == nil {
-                // No hay más Time Controls - mostrar End of Race
-                // Desbloquear automáticamente cuando aparece End of Race
-                EndOfRaceView(onDismiss: {
-                    // Finalizar workout de HealthKit
-                    endHealthKitWorkout()
-                    
-                    // Si hay un callback de fin de carrera, usarlo (para resetear y volver a Welcome)
-                    // Si no, usar el comportamiento anterior (volver al menu)
-                    if let onRaceEnd = onRaceEnd {
-                        onRaceEnd()
+                Group {
+                    if !hasPersistedWorkout {
+                        raceEndPersistingView
+                    } else if shouldOfferEffortRating && !hasCompletedEffortRating {
+                        WorkoutEffortRatingView { score in
+                            submitEffortScore(score)
+                        }
                     } else {
-                        onBack()
-                        dismiss()
+                        EndOfRaceView(onDismiss: {
+                            healthKitManager.completeRaceWorkoutCleanup()
+                            
+                            if let onRaceEnd = onRaceEnd {
+                                onRaceEnd()
+                            } else {
+                                onBack()
+                                dismiss()
+                            }
+                        })
                     }
-                })
+                }
                 .onAppear {
-                    // Asegurar que showGoScreen esté en false cuando aparece End of Race
+                    if raceEndTime == nil {
+                        raceEndTime = Date()
+                    }
                     showGoScreen = false
-                    // Desbloquear automáticamente cuando aparece End of Race
                     isScreenLocked = false
                     unlockClickCount = 0
-                    showUnlockOverlay = false // Ocultar overlay al desbloquear
+                    showUnlockOverlay = false
+                }
+                .task {
+                    await persistWorkoutAtRaceEndIfNeeded()
                 }
             } else {
                 // Determinar qué mostrar: GO! o countdown timer
@@ -906,17 +920,62 @@ struct RaceView: View {
         }
     }
     
-    private func endHealthKitWorkout() {
-        guard workoutStarted else { return }
+    private var raceEndPersistingView: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ProgressView()
+                .tint(.white)
+            Text("savingWorkout".localized)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .appBackground()
+    }
+    
+    @MainActor
+    private func persistWorkoutAtRaceEndIfNeeded() async {
+        guard !hasPersistedWorkout, !isPersistingWorkout else { return }
         
+        let hadActiveWorkout = workoutStarted
+        guard hadActiveWorkout else {
+            hasPersistedWorkout = true
+            shouldOfferEffortRating = false
+            hasCompletedEffortRating = true
+            return
+        }
+        
+        isPersistingWorkout = true
+        defer { isPersistingWorkout = false }
+        
+        do {
+            _ = try await healthKitManager.finalizeWorkout(endTime: raceEndTime ?? Date())
+            workoutStarted = false
+            shouldOfferEffortRating = true
+        } catch {
+            print("❌ [Workout] Error guardando carrera: \(error.localizedDescription)")
+            workoutStarted = false
+            shouldOfferEffortRating = false
+        }
+        
+        hasPersistedWorkout = true
+        if !shouldOfferEffortRating {
+            hasCompletedEffortRating = true
+        }
+    }
+    
+    private func submitEffortScore(_ score: Int) {
         Task {
             do {
-                try await healthKitManager.endWorkout(endTime: Date())
+                try await healthKitManager.addEffortScore(score)
                 await MainActor.run {
-                    workoutStarted = false
+                    hasCompletedEffortRating = true
                 }
             } catch {
-                print("Error finalizando workout: \(error.localizedDescription)")
+                print("⚠️ [Workout] Error guardando esfuerzo: \(error.localizedDescription)")
             }
         }
     }

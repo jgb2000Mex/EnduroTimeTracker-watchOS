@@ -376,6 +376,56 @@ class LocalizationManager {
             .german: ""
         ],
         
+        // WorkoutEffortRatingView
+        "effortRatingTitle": [
+            .english: "Rate Your Effort",
+            .spanish: "Evalúa tu esfuerzo",
+            .french: "",
+            .german: ""
+        ],
+        "effortRatingContinue": [
+            .english: "Continue",
+            .spanish: "Continuar",
+            .french: "",
+            .german: ""
+        ],
+        "effortEasy": [
+            .english: "Easy",
+            .spanish: "Fácil",
+            .french: "",
+            .german: ""
+        ],
+        "effortLight": [
+            .english: "Light",
+            .spanish: "Ligero",
+            .french: "",
+            .german: ""
+        ],
+        "effortModerate": [
+            .english: "Moderate",
+            .spanish: "Moderado",
+            .french: "",
+            .german: ""
+        ],
+        "effortHard": [
+            .english: "Hard",
+            .spanish: "Duro",
+            .french: "",
+            .german: ""
+        ],
+        "effortAllOut": [
+            .english: "All Out",
+            .spanish: "Máximo",
+            .french: "",
+            .german: ""
+        ],
+        "savingWorkout": [
+            .english: "Saving workout…",
+            .spanish: "Guardando carrera…",
+            .french: "",
+            .german: ""
+        ],
+        
         // WarningView
         "warningMessage": [
             .english: "Always keep a written backup copy of your times at hand",

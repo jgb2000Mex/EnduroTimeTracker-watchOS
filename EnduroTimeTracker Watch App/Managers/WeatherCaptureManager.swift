@@ -17,6 +17,17 @@ struct WorkoutWeatherSnapshot {
     }
 }
 
+/// Muestras de clima al inicio (TC1) y al final de la carrera.
+struct WorkoutWeatherSamples {
+    var atStart: WorkoutWeatherSnapshot?
+    var atEnd: WorkoutWeatherSnapshot?
+    
+    /// Para Fitness: prioriza fin de carrera; si no hay, usa inicio TC1.
+    var preferredForFitness: WorkoutWeatherSnapshot? {
+        atEnd ?? atStart
+    }
+}
+
 @MainActor
 final class WeatherCaptureManager {
     static let shared = WeatherCaptureManager()
